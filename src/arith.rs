@@ -16,7 +16,7 @@ pub(crate) fn dot_e<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::G2>) -> Array2<
         for j in 0..n {
             let mut sum = PairingOutput::zero();
             for k in 0..n_prime {
-                sum = sum + E::pairing(a[[i, k]], b[[k, j]]);
+                sum += E::pairing(a[[i, k]], b[[k, j]]);
             }
             res[[i, j]] = sum;
         }
@@ -38,7 +38,7 @@ pub(crate) fn dot_e_rev<E: Pairing>(
         for j in 0..n {
             let mut sum = PairingOutput::zero();
             for k in 0..n_prime {
-                sum = sum + E::pairing(b[[k, j]], a[[i, k]]);
+                sum += E::pairing(b[[k, j]], a[[i, k]]);
             }
             res[[i, j]] = sum;
         }
@@ -60,7 +60,7 @@ pub(crate) fn dot_es<E: Pairing>(
         for j in 0..n {
             let mut sum = PairingOutput::zero();
             for k in 0..n_prime {
-                sum = sum + a[[i, k]].mul(b[[k, j]]);
+                sum += a[[i, k]].mul(b[[k, j]]);
             }
             res[[i, j]] = sum;
         }
