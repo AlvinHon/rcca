@@ -7,5 +7,5 @@ pub struct Ciphertext<E: Pairing> {
     pub(crate) x: Array2<E::G1Affine>,
     // dim = (k+1, 1)
     pub(crate) v: Array2<E::G2Affine>,
-    // pub(crate) pi: Vec<PairingOutput<E>>,
+    pub(crate) pi: Array2<PairingOutput<E>>,
 }

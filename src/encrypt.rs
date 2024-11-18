@@ -1,13 +1,12 @@
 use ark_ec::{
     pairing::{Pairing, PairingOutput},
-    AffineRepr, CurveGroup, PrimeGroup,
+    AffineRepr,
 };
-use ark_std::{rand::Rng, UniformRand, Zero};
+use ark_std::{rand::Rng, UniformRand};
 use ndarray::{Array, Array2, Axis};
-use std::ops::{Add, Mul};
 
 use crate::{
-    arith::{dot_1s, dot_2s},
+    arith::{dot_1s, dot_2s, dot_e, dot_es},
     ciphertext::Ciphertext,
 };
 
@@ -52,11 +51,29 @@ impl<E: Pairing> EncryptKey<E> {
             let mut tmp = u.reversed_axes(); // (1, k+1)
             tmp.append(Axis(1), p.mapv(|x| x.into()).view()).unwrap(); // (1, k+2)
             tmp.reversed_axes()
-        };
+        }; // (k+2, 1)
 
         // [v]_2 = [E]_2 * s
         let v = dot_2s::<E>(&self.big_e, &s); // (k+1, 1)
 
-        Ciphertext { x, v }
+        // [pi1]_T = [f^T D]_T * r + [[F^T D]_T * r v]_T
+        let pi1 = dot_es(&self.ft_d, &r)
+            + dot_e::<E>(
+                &dot_1s::<E>(&self.big_ft_d, &r)
+                    .mapv(|x| x.into())
+                    .reversed_axes(),
+                &v.mapv(|x| x.into()),
+            );
+
+        // [pi2]_T = [g^T E]_T * s + [[x]_1  [G^T E] * s]_T
+        let pi2 = dot_es(&self.gt_e, &s)
+            + dot_e::<E>(
+                &x.mapv(|x| x.into()).reversed_axes(),
+                &dot_2s::<E>(&self.big_gt_e, &s).mapv(|x| x.into()),
+            );
+
+        let pi = pi1 + pi2;
+
+        Ciphertext { x, v, pi }
     }
 }

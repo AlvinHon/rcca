@@ -15,7 +15,6 @@ mod test {
     use ark_bls12_381::Bls12_381 as E;
     use ark_ec::pairing::Pairing;
     use ark_std::{test_rng, UniformRand};
-    use ndarray::Array2;
 
     type G1 = <E as Pairing>::G1Affine;
 
@@ -32,7 +31,7 @@ mod test {
         let m = G1::rand(rng);
 
         let ciphertext = ek.encrypt(rng, m);
-        let m_prime = dk.decrypt(&ciphertext);
+        let m_prime = dk.decrypt(&pp, &ciphertext).unwrap();
 
         assert_eq!(m, m_prime);
     }

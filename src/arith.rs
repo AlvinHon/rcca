@@ -25,6 +25,50 @@ pub(crate) fn dot_e<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::G2>) -> Array2<
     res
 }
 
+pub(crate) fn dot_e_rev<E: Pairing>(
+    a: &Array2<E::G2>,
+    b: &Array2<E::G1>,
+) -> Array2<PairingOutput<E>> {
+    let (m, n_prime) = a.dim();
+    let (m_prime, n) = b.dim();
+    assert!(n_prime == m_prime);
+
+    let mut res = Array2::from_elem((m, n), PairingOutput::zero());
+    for i in 0..m {
+        for j in 0..n {
+            let mut sum = PairingOutput::zero();
+            for k in 0..n_prime {
+                sum = sum + E::pairing(b[[k, j]], a[[i, k]]);
+            }
+            res[[i, j]] = sum;
+        }
+    }
+
+    res
+}
+
+pub(crate) fn dot_es<E: Pairing>(
+    a: &Array2<PairingOutput<E>>,
+    b: &Array2<E::ScalarField>,
+) -> Array2<PairingOutput<E>> {
+    let (m, n_prime) = a.dim();
+    let (m_prime, n) = b.dim();
+    assert!(n_prime == m_prime);
+
+    let mut res = Array2::from_elem((m, n), PairingOutput::zero());
+    for i in 0..m {
+        for j in 0..n {
+            let mut sum = PairingOutput::zero();
+            for k in 0..n_prime {
+                sum = sum + a[[i, k]].mul(b[[k, j]]);
+            }
+            res[[i, j]] = sum;
+        }
+    }
+
+    res
+}
+
 pub(crate) fn dot_1s<E: Pairing>(
     a: &Array2<E::G1Affine>,
     b: &Array2<E::ScalarField>,
@@ -83,6 +127,28 @@ pub(crate) fn dot_2s<E: Pairing>(
             let mut sum = E::G2Affine::zero();
             for k in 0..n_prime {
                 sum = (sum + a[[i, k]].mul(b[[k, j]])).into();
+            }
+            res[[i, j]] = sum;
+        }
+    }
+
+    res
+}
+
+pub(crate) fn dot_s2<E: Pairing>(
+    a: &Array2<E::ScalarField>,
+    b: &Array2<E::G2Affine>,
+) -> Array2<E::G2Affine> {
+    let (m, n_prime) = a.dim();
+    let (m_prime, n) = b.dim();
+    assert!(n_prime == m_prime);
+
+    let mut res = Array2::from_elem((m, n), E::G2Affine::zero());
+    for i in 0..m {
+        for j in 0..n {
+            let mut sum = E::G2Affine::zero();
+            for k in 0..n_prime {
+                sum = (sum + b[[k, j]].mul(a[[i, k]])).into();
             }
             res[[i, j]] = sum;
         }
