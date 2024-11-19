@@ -13,23 +13,23 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EncryptKey<E: Pairing> {
     // dim = (k+1, k)
-    pub(crate) big_d: Array2<E::G1Affine>,
+    pub(crate) big_d: Array2<E::G1>,
     // dim = (k+1, k)
-    pub(crate) big_e: Array2<E::G2Affine>,
+    pub(crate) big_e: Array2<E::G2>,
     // dim = (1, k)
-    pub(crate) at_d: Array2<E::G1Affine>,
+    pub(crate) at_d: Array2<E::G1>,
     // dim = (1, k)
     pub(crate) ft_d: Array2<PairingOutput<E>>,
     // dim = (k+1, k)
-    pub(crate) big_ft_d: Array2<E::G1Affine>,
+    pub(crate) big_ft_d: Array2<E::G1>,
     // dim = (1, k)
     pub(crate) gt_e: Array2<PairingOutput<E>>,
     // dim = (k+2, k)
-    pub(crate) big_gt_e: Array2<E::G2Affine>,
+    pub(crate) big_gt_e: Array2<E::G2>,
     // dim = (k+1, k)
-    pub(crate) big_g_d: Array2<E::G1Affine>,
+    pub(crate) big_g_d: Array2<E::G1>,
     // dim = (k+1, k)
-    pub(crate) big_f_e: Array2<E::G2Affine>,
+    pub(crate) big_f_e: Array2<E::G2>,
 }
 
 impl<E: Pairing> EncryptKey<E> {
@@ -44,12 +44,12 @@ impl<E: Pairing> EncryptKey<E> {
         let u = dot_1s::<E>(&self.big_d, &r); // (k+1, 1)
 
         // [p]_1 = [a^T D]_1 * r + [m]_1
-        let p = dot_1s::<E>(&self.at_d, &r).mapv(|x| x.into_group()) + m; // (1, 1)
+        let p = dot_1s::<E>(&self.at_d, &r) + m; // (1, 1)
 
         // [x] = ([u^T], p)^T
         let x = {
             let mut tmp = u.reversed_axes(); // (1, k+1)
-            tmp.append(Axis(1), p.mapv(|x| x.into()).view()).unwrap(); // (1, k+2)
+            tmp.append(Axis(1), p.view()).unwrap(); // (1, k+2)
             tmp.reversed_axes()
         }; // (k+2, 1)
 
@@ -58,19 +58,11 @@ impl<E: Pairing> EncryptKey<E> {
 
         // [pi1]_T = [f^T D]_T * r + [[F^T D]_T * r v]_T
         let pi1 = dot_es(&self.ft_d, &r)
-            + dot_e::<E>(
-                &dot_1s::<E>(&self.big_ft_d, &r)
-                    .mapv(|x| x.into())
-                    .reversed_axes(),
-                &v.mapv(|x| x.into()),
-            );
+            + dot_e::<E>(&dot_1s::<E>(&self.big_ft_d, &r).reversed_axes(), &v);
 
         // [pi2]_T = [g^T E]_T * s + [[x]_1  [G^T E] * s]_T
         let pi2 = dot_es(&self.gt_e, &s)
-            + dot_e::<E>(
-                &x.mapv(|x| x.into()).reversed_axes(),
-                &dot_2s::<E>(&self.big_gt_e, &s).mapv(|x| x.into()),
-            );
+            + dot_e::<E>(&x.clone().reversed_axes(), &dot_2s::<E>(&self.big_gt_e, &s));
 
         let pi = pi1 + pi2;
 
@@ -99,24 +91,16 @@ impl<E: Pairing> EncryptKey<E> {
         };
 
         // [x_cap]_1 = [x]_1 + [D*]_1 * r
-        let x_cap = c.x.mapv(|x| x.into()) + dot_1s::<E>(&big_d_star, &r); // (k+2, 1)
+        let x_cap = &c.x + dot_1s::<E>(&big_d_star, &r); // (k+2, 1)
 
         // [v_cap]_2 = [v]_2 + [E]_2 * s
-        let v_cap = c.v.mapv(|x| x.into()) + dot_2s::<E>(&self.big_e, &s); // (k+1, 1)
+        let v_cap = &c.v + dot_2s::<E>(&self.big_e, &s); // (k+1, 1)
 
         // [pi1_cap]_T = [f^T D]_T * r + [[F^T D]_T * r v_cap]_T + [u^T [FE]_2 s]_T
         let pi1_cap = {
             let part1 = dot_es(&self.ft_d, &r);
-            let part2 = dot_e::<E>(
-                &dot_1s::<E>(&self.big_ft_d, &r)
-                    .mapv(|x| x.into())
-                    .reversed_axes(),
-                &v_cap,
-            );
-            let part3 = dot_e::<E>(
-                &u_t.mapv(|x| x.into()),
-                &dot_2s::<E>(&self.big_f_e, &s).mapv(|x| x.into()),
-            );
+            let part2 = dot_e::<E>(&dot_1s::<E>(&self.big_ft_d, &r).reversed_axes(), &v_cap);
+            let part3 = dot_e::<E>(&u_t, &dot_2s::<E>(&self.big_f_e, &s));
 
             part1 + part2 + part3
         };
@@ -126,22 +110,17 @@ impl<E: Pairing> EncryptKey<E> {
             let part1 = dot_es(&self.gt_e, &s);
             let part2 = dot_e::<E>(
                 &x_cap.clone().reversed_axes(),
-                &dot_2s::<E>(&self.big_gt_e, &s).mapv(|x| x.into()),
+                &dot_2s::<E>(&self.big_gt_e, &s),
             );
-            let part3 = dot_e::<E>(
-                &dot_1s::<E>(&self.big_g_d, &r)
-                    .mapv(|x| x.into())
-                    .reversed_axes(),
-                &c.v.mapv(|x| x.into()),
-            );
+            let part3 = dot_e::<E>(&dot_1s::<E>(&self.big_g_d, &r).reversed_axes(), &c.v);
 
             part1 + part2 + part3
         };
 
         let pi_t_cap = c.pi.clone() + pi1_cap + pi2_cap;
         Ciphertext {
-            x: x_cap.mapv(|x| x.into()),
-            v: v_cap.mapv(|x| x.into()),
+            x: x_cap,
+            v: v_cap,
             pi: pi_t_cap,
         }
     }

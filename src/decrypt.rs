@@ -42,15 +42,13 @@ impl<E: Pairing> DecryptKey<E> {
         // [pi1]_T = [(f + Fv)^T u]_T
         let pi1 = {
             let l = self.f.mapv(|x| pp.p2.mul(x)) + dot_s2::<E>(&self.big_f, &c.v);
-            let r = u.mapv(|x| x.into());
-            dot_e_rev::<E>(&l.reversed_axes(), &r)
+            dot_e_rev::<E>(&l.reversed_axes(), &u)
         };
 
         // [pi2]_T = [(g + Gx)^T v]_T
         let pi2 = {
             let l = self.g.mapv(|x| pp.p1.mul(x)) + dot_s1::<E>(&self.big_g, &c.x);
-            let r = c.v.mapv(|x| x.into());
-            dot_e::<E>(&l.reversed_axes(), &r)
+            dot_e::<E>(&l.reversed_axes(), &c.v)
         };
 
         let pi = pi1 + pi2;

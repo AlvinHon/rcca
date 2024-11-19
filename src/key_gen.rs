@@ -79,15 +79,15 @@ pub fn ken_gen<E: Pairing, R: Rng>(
             big_g,
         },
         EncryptKey {
-            big_d: big_d_mat1.mapv(|g1| g1.into()),
-            big_e: big_e_mat2.mapv(|g2| g2.into()),
-            at_d: at_d.mapv(|g1| g1.into()),
+            big_d: big_d_mat1,
+            big_e: big_e_mat2,
+            at_d,
             ft_d,
-            big_ft_d: big_ft_d.mapv(|g1| g1.into()),
+            big_ft_d,
             gt_e,
-            big_gt_e: big_gt_e.mapv(|g2| g2.into()),
-            big_g_d: big_g_d.mapv(|g1| g1.into()),
-            big_f_e: big_f_e.mapv(|g2| g2.into()),
+            big_gt_e,
+            big_g_d,
+            big_f_e,
         },
     )
 }

@@ -1,7 +1,4 @@
-use ark_ec::{
-    pairing::{Pairing, PairingOutput},
-    AffineRepr,
-};
+use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_std::Zero;
 use ndarray::Array2;
 use std::ops::Mul;
@@ -69,88 +66,76 @@ pub(crate) fn dot_es<E: Pairing>(
     res
 }
 
-pub(crate) fn dot_1s<E: Pairing>(
-    a: &Array2<E::G1Affine>,
-    b: &Array2<E::ScalarField>,
-) -> Array2<E::G1Affine> {
+pub(crate) fn dot_1s<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::ScalarField>) -> Array2<E::G1> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
     assert!(n_prime == m_prime);
 
-    let mut res = Array2::from_elem((m, n), E::G1Affine::zero());
+    let mut res = Array2::from_elem((m, n), E::G1::zero());
     for i in 0..m {
         for j in 0..n {
             let mut sum = E::G1::zero();
             for k in 0..n_prime {
                 sum += a[[i, k]].mul(b[[k, j]]);
             }
-            res[[i, j]] = sum.into();
+            res[[i, j]] = sum;
         }
     }
 
     res
 }
 
-pub(crate) fn dot_s1<E: Pairing>(
-    a: &Array2<E::ScalarField>,
-    b: &Array2<E::G1Affine>,
-) -> Array2<E::G1Affine> {
+pub(crate) fn dot_s1<E: Pairing>(a: &Array2<E::ScalarField>, b: &Array2<E::G1>) -> Array2<E::G1> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
     assert!(n_prime == m_prime);
 
-    let mut res = Array2::from_elem((m, n), E::G1Affine::zero());
+    let mut res = Array2::from_elem((m, n), E::G1::zero());
     for i in 0..m {
         for j in 0..n {
             let mut sum = E::G1::zero();
             for k in 0..n_prime {
                 sum += b[[k, j]].mul(a[[i, k]]);
             }
-            res[[i, j]] = sum.into();
+            res[[i, j]] = sum;
         }
     }
 
     res
 }
 
-pub(crate) fn dot_2s<E: Pairing>(
-    a: &Array2<E::G2Affine>,
-    b: &Array2<E::ScalarField>,
-) -> Array2<E::G2Affine> {
+pub(crate) fn dot_2s<E: Pairing>(a: &Array2<E::G2>, b: &Array2<E::ScalarField>) -> Array2<E::G2> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
     assert!(n_prime == m_prime);
 
-    let mut res = Array2::from_elem((m, n), E::G2Affine::zero());
+    let mut res = Array2::from_elem((m, n), E::G2::zero());
     for i in 0..m {
         for j in 0..n {
             let mut sum = E::G2::zero();
             for k in 0..n_prime {
                 sum += a[[i, k]].mul(b[[k, j]]);
             }
-            res[[i, j]] = sum.into();
+            res[[i, j]] = sum;
         }
     }
 
     res
 }
 
-pub(crate) fn dot_s2<E: Pairing>(
-    a: &Array2<E::ScalarField>,
-    b: &Array2<E::G2Affine>,
-) -> Array2<E::G2Affine> {
+pub(crate) fn dot_s2<E: Pairing>(a: &Array2<E::ScalarField>, b: &Array2<E::G2>) -> Array2<E::G2> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
     assert!(n_prime == m_prime);
 
-    let mut res = Array2::from_elem((m, n), E::G2Affine::zero());
+    let mut res = Array2::from_elem((m, n), E::G2::zero());
     for i in 0..m {
         for j in 0..n {
             let mut sum = E::G2::zero();
             for k in 0..n_prime {
                 sum += b[[k, j]].mul(a[[i, k]]);
             }
-            res[[i, j]] = sum.into();
+            res[[i, j]] = sum;
         }
     }
 
@@ -161,7 +146,7 @@ pub(crate) fn dot_s2<E: Pairing>(
 mod test {
 
     use ark_bls12_381::Bls12_381 as E;
-    use ark_ec::{pairing::Pairing, CurveGroup};
+    use ark_ec::pairing::Pairing;
     use ark_std::{test_rng, UniformRand};
     use ndarray::Array2;
 
@@ -187,11 +172,11 @@ mod test {
         let p1 = G1::rand(rng);
 
         // [a^T d] s
-        let at_d = a_t.dot(&d).mapv(|x| p1.mul(x).into_affine());
+        let at_d = a_t.dot(&d).mapv(|x| p1.mul(x));
         let at_d_s_1 = dot_1s::<E>(&at_d, &s);
 
         // a^T [d s]
-        let d_s = d.dot(&s).mapv(|x| p1.mul(x).into_affine());
+        let d_s = d.dot(&s).mapv(|x| p1.mul(x));
         let at_d_s_2 = dot_s1::<E>(&a_t, &d_s);
 
         // [a^T d] s = a^T [d s]
@@ -202,11 +187,11 @@ mod test {
         let p2 = G2::rand(rng);
 
         // [a^T d] s
-        let at_d = a_t.dot(&d).mapv(|x| p2.mul(x).into_affine());
+        let at_d = a_t.dot(&d).mapv(|x| p2.mul(x));
         let at_d_s_1 = dot_2s::<E>(&at_d, &s);
 
         // a^T [d s]
-        let d_s = d.dot(&s).mapv(|x| p2.mul(x).into_affine());
+        let d_s = d.dot(&s).mapv(|x| p2.mul(x));
         let at_d_s_2 = dot_s2::<E>(&a_t, &d_s);
 
         // [a^T d] s = a^T [d s]
