@@ -34,5 +34,11 @@ mod test {
         let m_prime = dk.decrypt(&pp, &ciphertext).unwrap();
 
         assert_eq!(m, m_prime);
+
+        let ciphertext2 = ek.randomize(rng, &ciphertext);
+        assert!(ciphertext != ciphertext2);
+        let m_prime2 = dk.decrypt(&pp, &ciphertext2).unwrap();
+
+        assert_eq!(m, m_prime2);
     }
 }

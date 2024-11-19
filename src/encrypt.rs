@@ -10,7 +10,7 @@ use crate::{
     ciphertext::Ciphertext,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EncryptKey<E: Pairing> {
     // dim = (k+1, k)
     pub(crate) big_d: Array2<E::G1Affine>,
@@ -75,5 +75,74 @@ impl<E: Pairing> EncryptKey<E> {
         let pi = pi1 + pi2;
 
         Ciphertext { x, v, pi }
+    }
+
+    pub fn randomize<R: Rng>(&self, rng: &mut R, c: &Ciphertext<E>) -> Ciphertext<E> {
+        let k = self.big_d.dim().1;
+
+        let r = Array2::from_shape_fn((k, 1), |_| E::ScalarField::rand(rng));
+        let s = Array2::from_shape_fn((k, 1), |_| E::ScalarField::rand(rng));
+
+        // parse x, [x^T]_1 = ([u^T], p)
+        let u_t = {
+            let mut x_t = c.x.clone().reversed_axes(); // (1, k+2)
+            x_t.remove_index(Axis(1), k + 1);
+            x_t // (1, k+1)
+        };
+
+        // D* = (D^T, (a^T D)^T)^T
+        let big_d_star = {
+            let mut res = self.big_d.clone().reversed_axes(); // (k, k+1)
+            let at_d_t = self.at_d.clone().reversed_axes(); // (k, 1)
+            res.append(Axis(1), at_d_t.view()).unwrap(); // (k, k+2)
+            res.reversed_axes() // (k+2, k)
+        };
+
+        // [x_cap]_1 = [x]_1 + [D*]_1 * r
+        let x_cap = c.x.mapv(|x| x.into()) + dot_1s::<E>(&big_d_star, &r); // (k+2, 1)
+
+        // [v_cap]_2 = [v]_2 + [E]_2 * s
+        let v_cap = c.v.mapv(|x| x.into()) + dot_2s::<E>(&self.big_e, &s); // (k+1, 1)
+
+        // [pi1_cap]_T = [f^T D]_T * r + [[F^T D]_T * r v_cap]_T + [u^T [FE]_2 s]_T
+        let pi1_cap = {
+            let part1 = dot_es(&self.ft_d, &r);
+            let part2 = dot_e::<E>(
+                &dot_1s::<E>(&self.big_ft_d, &r)
+                    .mapv(|x| x.into())
+                    .reversed_axes(),
+                &v_cap,
+            );
+            let part3 = dot_e::<E>(
+                &u_t.mapv(|x| x.into()),
+                &dot_2s::<E>(&self.big_f_e, &s).mapv(|x| x.into()),
+            );
+
+            part1 + part2 + part3
+        };
+
+        // [pi2_cap]_T = [g^T E]_T * s + [[x_cap]_1^T gt_e * s]_T + [([big_g_d]] * r)^T v]_T
+        let pi2_cap = {
+            let part1 = dot_es(&self.gt_e, &s);
+            let part2 = dot_e::<E>(
+                &x_cap.clone().reversed_axes(),
+                &dot_2s::<E>(&self.big_gt_e, &s).mapv(|x| x.into()),
+            );
+            let part3 = dot_e::<E>(
+                &dot_1s::<E>(&self.big_g_d, &r)
+                    .mapv(|x| x.into())
+                    .reversed_axes(),
+                &c.v.mapv(|x| x.into()),
+            );
+
+            part1 + part2 + part3
+        };
+
+        let pi_t_cap = c.pi.clone() + pi1_cap + pi2_cap;
+        Ciphertext {
+            x: x_cap.mapv(|x| x.into()),
+            v: v_cap.mapv(|x| x.into()),
+            pi: pi_t_cap,
+        }
     }
 }

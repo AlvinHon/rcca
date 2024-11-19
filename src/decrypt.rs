@@ -8,6 +8,7 @@ use crate::{
     Params,
 };
 
+#[derive(Clone, Debug)]
 pub struct DecryptKey<E: Pairing> {
     // dim = (k+1, 1)
     pub(crate) a: Array2<E::ScalarField>,
@@ -30,7 +31,7 @@ impl<E: Pairing> DecryptKey<E> {
             let mut x_t = c.x.clone().reversed_axes(); // (1, k+2)
             let p = x_t[(0, k + 1)];
             x_t.remove_index(Axis(1), k + 1);
-            let u = x_t.reversed_axes(); // (1, k+1)
+            let u = x_t.reversed_axes(); // (k+1, 1)
             (u, p)
         };
 

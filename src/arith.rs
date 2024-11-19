@@ -80,11 +80,11 @@ pub(crate) fn dot_1s<E: Pairing>(
     let mut res = Array2::from_elem((m, n), E::G1Affine::zero());
     for i in 0..m {
         for j in 0..n {
-            let mut sum = E::G1Affine::zero();
+            let mut sum = E::G1::zero();
             for k in 0..n_prime {
-                sum = (sum + a[[i, k]].mul(b[[k, j]])).into();
+                sum += a[[i, k]].mul(b[[k, j]]);
             }
-            res[[i, j]] = sum;
+            res[[i, j]] = sum.into();
         }
     }
 
@@ -102,11 +102,11 @@ pub(crate) fn dot_s1<E: Pairing>(
     let mut res = Array2::from_elem((m, n), E::G1Affine::zero());
     for i in 0..m {
         for j in 0..n {
-            let mut sum = E::G1Affine::zero();
+            let mut sum = E::G1::zero();
             for k in 0..n_prime {
-                sum = (sum + b[[k, j]].mul(a[[i, k]])).into();
+                sum += b[[k, j]].mul(a[[i, k]]);
             }
-            res[[i, j]] = sum;
+            res[[i, j]] = sum.into();
         }
     }
 
@@ -124,11 +124,11 @@ pub(crate) fn dot_2s<E: Pairing>(
     let mut res = Array2::from_elem((m, n), E::G2Affine::zero());
     for i in 0..m {
         for j in 0..n {
-            let mut sum = E::G2Affine::zero();
+            let mut sum = E::G2::zero();
             for k in 0..n_prime {
-                sum = (sum + a[[i, k]].mul(b[[k, j]])).into();
+                sum += a[[i, k]].mul(b[[k, j]]);
             }
-            res[[i, j]] = sum;
+            res[[i, j]] = sum.into();
         }
     }
 
@@ -146,11 +146,11 @@ pub(crate) fn dot_s2<E: Pairing>(
     let mut res = Array2::from_elem((m, n), E::G2Affine::zero());
     for i in 0..m {
         for j in 0..n {
-            let mut sum = E::G2Affine::zero();
+            let mut sum = E::G2::zero();
             for k in 0..n_prime {
-                sum = (sum + b[[k, j]].mul(a[[i, k]])).into();
+                sum += b[[k, j]].mul(a[[i, k]]);
             }
-            res[[i, j]] = sum;
+            res[[i, j]] = sum.into();
         }
     }
 
@@ -167,30 +167,108 @@ mod test {
 
     type Fr = <E as Pairing>::ScalarField;
     type G1 = <E as Pairing>::G1;
+    type G2 = <E as Pairing>::G2;
 
     use super::*;
 
     #[test]
-    fn test_commutativity() {
+    fn test_associativity() {
         let rng = &mut test_rng();
-        let k = 3;
+        let m = 3;
+        let n = 2;
 
-        let a = Array2::from_shape_fn((k + 1, 1), |_| Fr::rand(rng));
-        let d = Array2::from_shape_fn((k + 1, k), |_| Fr::rand(rng));
-        let s = Array2::from_shape_fn((k, 1), |_| Fr::rand(rng));
+        let a = Array2::from_shape_fn((m + 1, n), |_| Fr::rand(rng));
+        let a_t = a.reversed_axes();
+        let d = Array2::from_shape_fn((m + 1, m), |_| Fr::rand(rng));
+        let s = Array2::from_shape_fn((m, n), |_| Fr::rand(rng));
 
-        let g = G1::rand(rng);
+        // ... Test Group 1 ...
+
+        let p1 = G1::rand(rng);
 
         // [a^T d] s
-        let a_t = a.reversed_axes();
-        let at_d = a_t.dot(&d).mapv(|x| g.mul(x).into_affine());
+        let at_d = a_t.dot(&d).mapv(|x| p1.mul(x).into_affine());
         let at_d_s_1 = dot_1s::<E>(&at_d, &s);
 
         // a^T [d s]
-        let d_s = d.dot(&s).mapv(|x| g.mul(x).into_affine());
+        let d_s = d.dot(&s).mapv(|x| p1.mul(x).into_affine());
         let at_d_s_2 = dot_s1::<E>(&a_t, &d_s);
 
         // [a^T d] s = a^T [d s]
         assert_eq!(at_d_s_1, at_d_s_2);
+
+        // ... Test Group 2 ...
+
+        let p2 = G2::rand(rng);
+
+        // [a^T d] s
+        let at_d = a_t.dot(&d).mapv(|x| p2.mul(x).into_affine());
+        let at_d_s_1 = dot_2s::<E>(&at_d, &s);
+
+        // a^T [d s]
+        let d_s = d.dot(&s).mapv(|x| p2.mul(x).into_affine());
+        let at_d_s_2 = dot_s2::<E>(&a_t, &d_s);
+
+        // [a^T d] s = a^T [d s]
+        assert_eq!(at_d_s_1, at_d_s_2);
+    }
+
+    #[test]
+    fn test_pairing_output_scalar_multiplication() {
+        let rng = &mut test_rng();
+        let m = 3;
+        let n = 2;
+
+        let g1 = G1::rand(rng);
+        let g2 = G2::rand(rng);
+        let gt = E::pairing(g1, g2);
+
+        let a = Array2::from_shape_fn((m, n), |_| Fr::rand(rng));
+        let b = Array2::from_shape_fn((n, m), |_| Fr::rand(rng));
+
+        // ... Test dot_e ...
+
+        // e([a], [b])
+        let a_g1 = a.mapv(|x| g1.mul(x));
+        let b_g2 = b.mapv(|x| g2.mul(x));
+        let ab_gt_1 = dot_e::<E>(&a_g1, &b_g2);
+
+        // [a^T b]_T
+        let ab = a.dot(&b);
+        let ab_gt_2 = ab.mapv(|x| gt.mul(x));
+
+        // e([a], [b]]) = [a^T b]_T
+        assert_eq!(ab_gt_1, ab_gt_2);
+
+        // ... Test dot_e_rev ...
+
+        // e([a]^T, [b]^T)
+        let a_g1_t = a.clone().reversed_axes().mapv(|x| g1.mul(x));
+        let b_g2_t = b.clone().reversed_axes().mapv(|x| g2.mul(x));
+        let ba_gt_1 = dot_e_rev::<E>(&b_g2_t, &a_g1_t);
+
+        // [b a^T]_T
+        let ba = b.clone().reversed_axes().dot(&a.clone().reversed_axes());
+        let ba_gt_2 = ba.mapv(|x| gt.mul(x));
+
+        // e([a]^T, [b]^T) = [b a^T]_T
+        assert_eq!(ba_gt_1, ba_gt_2);
+        // [a^T b]_T = [b a^T]_T ^ T
+        assert_eq!(ab_gt_1, ba_gt_1.reversed_axes());
+
+        // ... Test dot_es ...
+
+        let s = Array2::from_shape_fn((m, n), |_| Fr::rand(rng));
+
+        // e([a], [b]) s
+        let ab_gt = dot_e::<E>(&a.mapv(|x| g1.mul(x)), &b.mapv(|x| g2.mul(x)));
+        let ab_s_gt_1 = dot_es::<E>(&ab_gt, &s);
+
+        // [a^T b]_T s
+        let ab_s = a.dot(&b).dot(&s);
+        let ab_s_gt_2 = ab_s.mapv(|x| gt.mul(x));
+
+        // e([a], [b]) s = [a^T b]_T s
+        assert_eq!(ab_s_gt_1, ab_s_gt_2);
     }
 }
