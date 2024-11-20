@@ -6,6 +6,7 @@ pub mod encrypt;
 pub use encrypt::EncryptKey;
 pub mod key_gen;
 pub use key_gen::ken_gen;
+pub mod nizk;
 pub mod params;
 pub use params::Params;
 
