@@ -1,111 +1,251 @@
-use ark_ec::pairing::{Pairing, PairingOutput};
+use ark_ec::{
+    pairing::{Pairing, PairingOutput},
+    PrimeGroup,
+};
 use ark_std::{rand::Rng, UniformRand, Zero};
-use ndarray::{arr2, Array2};
+use ndarray::{arr2, Array2, Axis};
 use std::ops::Mul;
 
-use crate::arith::dot_e;
+use crate::{
+    arith::{dot_e, dot_s1, dot_s2},
+    Params,
+};
 
-pub(crate) type Com<G> = Array2<G>; // dim = (2, 1)
+type Com<G> = Array2<G>; // dim = (2, 1)
 
-pub(crate) type Proof<E> = Array2<PairingOutput<E>>; // dim = (2, 2)
+type Pi<G> = Array2<G>; // dim = (2, 2)
 
-pub(crate) struct CommitmentKeys<E: Pairing> {
-    g1: E::G1,
-    g2: E::G2,
-    // dim = (2, 1)
-    u1: Array2<E::G1>,
-    // dim = (2, 1)
-    u2: Array2<E::G1>,
-    // dim = (2, 1)
-    v1: Array2<E::G2>,
-    // dim = (2, 1)
-    v2: Array2<E::G2>,
+pub(crate) struct Proof<E: Pairing> {
+    c1: Com<E::G1>,
+    d1: Com<E::G2>,
+    c2: Com<E::G1>,
+    d2: Com<E::G2>,
+    theta: Pi<E::G1>,
+    phi: Pi<E::G2>,
 }
 
-impl<E: Pairing> CommitmentKeys<E> {
-    pub(crate) fn rand<R: Rng>(rng: &mut R) -> Self {
-        let g1 = E::G1::rand(rng);
-        let g2 = E::G2::rand(rng);
-        let u1 = arr2(&[[E::G1::rand(rng)], [E::G1::zero()]]);
-        let u2 = arr2(&[[E::G1::rand(rng)], [E::G1::zero()]]);
-        let v1 = arr2(&[[E::G2::rand(rng)], [E::G2::zero()]]);
-        let v2 = arr2(&[[E::G2::rand(rng)], [E::G2::zero()]]);
+pub(crate) struct CRS<E: Pairing> {
+    g1: E::G1,
+    g2: E::G2,
+    // dim = (2, 2)
+    u: Array2<E::G1>,
+    // dim = (2, 2)
+    v: Array2<E::G2>,
+}
 
-        Self {
-            g1,
-            g2,
-            u1,
-            u2,
-            v1,
-            v2,
-        }
+impl<E: Pairing> CRS<E> {
+    pub(crate) fn rand<R: Rng>(rng: &mut R, pp: &Params<E>) -> Self {
+        let Params { p1: g1, p2: g2 } = pp.clone();
+        let u = arr2(&[
+            [
+                g1.mul(E::ScalarField::rand(rng)),
+                g1.mul(E::ScalarField::rand(rng)),
+            ],
+            [
+                g1.mul(E::ScalarField::rand(rng)),
+                g1.mul(E::ScalarField::rand(rng)),
+            ],
+        ]);
+        let v = arr2(&[
+            [
+                g2.mul(E::ScalarField::rand(rng)),
+                g2.mul(E::ScalarField::rand(rng)),
+            ],
+            [
+                g2.mul(E::ScalarField::rand(rng)),
+                g2.mul(E::ScalarField::rand(rng)),
+            ],
+        ]);
+
+        Self { g1, g2, u, v }
     }
+}
 
-    pub(crate) fn commit_vec_1<R: Rng>(&self, rng: &mut R, xs: Array2<E::G1>) -> Vec<Com<E::G1>> {
-        let (m, n) = xs.dim();
-        assert!(n == 1);
+pub(crate) fn init<E: Pairing, R: Rng>(rng: &mut R, pp: &Params<E>) -> CRS<E> {
+    CRS::rand(rng, pp)
+}
 
-        let mut res = vec![];
-        for i in 0..m {
-            let x = xs[(i, 0)];
-            let c = self.commit_1(rng, x);
-            res.push(c);
-        }
+/// Prove the equation (5) defined in Appendix B.1.
+/// pi_t = e([f^T D] r, [1]) + e([F^T D] r, [v]) + e([1], [g^T E] s) + e([x], [G^T E] s)
+/// where X1 = [f^T D], X2 = [F^T D], B1 = [1], B2 = [v], Y1 = [g^T E], Y2 = [G^T E], A1 = [1], A2 = [x]
+pub(crate) fn prove<E: Pairing, R: Rng>(
+    rng: &mut R,
+    crs: &CRS<E>,
+    ft_d_r: &Array2<E::G1>,     // X1
+    big_ft_d_r: &Array2<E::G1>, // X2
+    v: &Array2<E::G2>,          // B2
+    gt_e_s: &Array2<E::G2>,     // Y1
+    x: &Array2<E::G1>,          // A2
+    big_gt_e_s: &Array2<E::G2>, // Y2
+) -> Proof<E> {
+    assert!(ft_d_r.dim() == v.dim());
+    assert!(big_ft_d_r.dim() == v.dim());
+    assert!(gt_e_s.dim() == x.dim());
+    assert!(big_gt_e_s.dim() == x.dim());
 
-        res
+    let (m, m_prime) = x.dim();
+    let (n, n_prime) = v.dim();
+    assert_eq!(m_prime, 1);
+    assert_eq!(n_prime, 1);
+
+    // randomness
+    let r = Array2::from_shape_fn((m, 2), |_| E::ScalarField::rand(rng));
+    let s = Array2::from_shape_fn((n, 2), |_| E::ScalarField::rand(rng));
+    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+
+    // split equation into two parts:
+    // 1. e([f^T D] r, [1]) + e([1], [g^T E] s)
+    // 2. e([F^T D] r, [v]) + e([x], [G^T E] s)
+
+    // Part 1.
+    let c1 = commit_1(&crs, &r, ft_d_r);
+    let d1 = commit_2(&crs, &s, gt_e_s);
+    let const_a = Array2::from_shape_fn(gt_e_s.dim(), |_| crs.g1.clone());
+    let const_b = Array2::from_shape_fn(ft_d_r.dim(), |_| crs.g2.clone());
+    let proof1_1 = proof_1(&crs, &s, &const_a, &z);
+    let proof1_2 = proof_2(&crs, &r, &const_b, &z);
+
+    // Part 2.
+    let c2 = commit_1(&crs, &r, big_ft_d_r);
+    let d2 = commit_2(&crs, &s, big_gt_e_s);
+    let proof2_1 = proof_1(&crs, &s, &x, &z);
+    let proof2_2 = proof_2(&crs, &r, &v, &z);
+
+    // Due to homomorphic behaviour of GS proof, combine the commitments and proofs into one
+    let theta = proof1_1 + proof2_1;
+    let phi = proof1_2 + proof2_2;
+
+    Proof {
+        c1,
+        c2,
+        d1,
+        d2,
+        theta,
+        phi,
     }
+}
 
-    /// Output a commitment (dim = (2, 1)) to x.
-    pub(crate) fn commit_1<R: Rng>(&self, rng: &mut R, x: E::G1) -> Com<E::G1> {
-        let (r1, r2) = (E::ScalarField::rand(rng), E::ScalarField::rand(rng));
-        let zero = E::G1::zero();
+pub(crate) fn verify<E: Pairing>(
+    crs: &CRS<E>,
+    proof: &Proof<E>,
+    v: &Array2<E::G2>,
+    x: &Array2<E::G1>,
+    pi_t: &Array2<PairingOutput<E>>,
+) -> bool {
+    let Proof {
+        c1,
+        c2,
+        d1,
+        d2,
+        theta,
+        phi,
+    } = proof;
 
-        arr2(&[[x, zero]]).reversed_axes()
-            + self.u1.mapv(|u| u.mul(r1))
-            + self.u2.mapv(|u| u.mul(r2))
-    }
+    let m = c1.dim().0;
+    let n = d1.dim().0;
 
-    pub(crate) fn commit_vec_2<R: Rng>(&self, rng: &mut R, xs: Array2<E::G2>) -> Vec<Com<E::G2>> {
-        let (m, n) = xs.dim();
-        assert!(n == 1);
+    let a1 = Array2::from_shape_fn((m, 1), |_| crs.g1.clone());
+    let b1 = Array2::from_shape_fn((n, 1), |_| crs.g2.clone());
 
-        let mut res = vec![];
-        for i in 0..m {
-            let x = xs[(i, 0)];
-            let c = self.commit_2(rng, x);
-            res.push(c);
-        }
+    // l(A1) d1 + l(A2) d2 + c1 l(B1) + c2 l(B2) = pi_t + u phi + theta v
+    let lhs = dot_e::<E>(&l(&a1), d1) + dot_e(&x, d2) + dot_e(c1, &l(&b1)) + dot_e(c2, &v);
+    let rhs = pi_t + dot_e(&crs.u, phi) + dot_e(theta, &crs.v);
+    lhs == rhs
+}
 
-        res
-    }
+fn commit_1<E: Pairing>(crs: &CRS<E>, r: &Array2<E::ScalarField>, x: &Array2<E::G1>) -> Com<E::G1> {
+    assert_eq!(x.dim().1, 1);
 
-    /// Output a commitment (dim = (2, 1)) to x.
-    pub(crate) fn commit_2<R: Rng>(&self, rng: &mut R, x: E::G2) -> Com<E::G2> {
-        let (r1, r2) = (E::ScalarField::rand(rng), E::ScalarField::rand(rng));
-        let zero = E::G2::zero();
+    // c = l(x) + Ru
+    l(x) + dot_s1::<E>(r, &crs.u)
+}
 
-        arr2(&[[x, zero]]).reversed_axes()
-            + self.v1.mapv(|v| v.mul(r1))
-            + self.v2.mapv(|v| v.mul(r2))
-    }
+fn commit_2<E: Pairing>(crs: &CRS<E>, s: &Array2<E::ScalarField>, y: &Array2<E::G2>) -> Com<E::G2> {
+    assert_eq!(y.dim().1, 1);
 
-    /// Output a commitment (dim = (2, 2)) to pi (dim = (1,1)).
-    pub(crate) fn commit_t<R: Rng>(&self, rng: &mut R, pi: Array2<PairingOutput<E>>) -> Proof<E> {
-        assert!(pi.dim() == (1, 1));
-        let pi = pi[(0, 0)];
-        let r = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+    // d = l(y) + Su
+    l(y) + dot_s2::<E>(s, &crs.v)
+}
 
-        // [[pi, 0], [0, 0]] + r11 [u1 v1^T] + r12 [u1 v2^T] + r21 [u2 v1^T] + r22 [u2 v2^T]
-        let zero = PairingOutput::zero();
-        let v1_rev = self.v1.clone().reversed_axes();
-        let v2_rev = self.v2.clone().reversed_axes();
+fn proof_1<E: Pairing>(
+    crs: &CRS<E>,
+    s: &Array2<E::ScalarField>,
+    a: &Array2<E::G1>,
+    z: &Array2<E::ScalarField>,
+) -> Pi<E::G1> {
+    assert_eq!(a.dim().1, 1);
 
-        let l1 = arr2(&[[pi, zero], [zero, zero]]);
-        let l2 = dot_e::<E>(&self.u1, &v1_rev).mapv(|x| x.mul(r[(0, 0)]));
-        let l3 = dot_e::<E>(&self.u1, &v2_rev).mapv(|x| x.mul(r[(0, 1)]));
-        let l4 = dot_e::<E>(&self.u2, &v1_rev).mapv(|x| x.mul(r[(1, 0)]));
-        let l5 = dot_e::<E>(&self.u2, &v2_rev).mapv(|x| x.mul(r[(1, 1)]));
+    // assume gamma does not exist (i.e. all zeros) in the equation, we have:
+    // theta = S^T l(a) + Zu
+    dot_s1::<E>(&s.clone().reversed_axes(), &l(a)) + dot_s1::<E>(&z, &crs.u)
+}
 
-        l1 + l2 + l3 + l4 + l5
+fn proof_2<E: Pairing>(
+    crs: &CRS<E>,
+    r: &Array2<E::ScalarField>,
+    b: &Array2<E::G2>,
+    z: &Array2<E::ScalarField>,
+) -> Pi<E::G2> {
+    assert_eq!(b.dim().1, 1);
+
+    // assume gamma does not exist (i.e. all zeros) in the equation, we have:
+    // theta = R^T l(b) - Z^T v
+    dot_s2::<E>(&r.clone().reversed_axes(), &l(b)) + dot_s2::<E>(&z.clone().reversed_axes(), &crs.v)
+}
+
+/// l(a) = [a, 0]
+fn l<G: PrimeGroup>(a: &Array2<G>) -> Array2<G> {
+    let mut a = a.clone();
+    let m = a.dim().0;
+    let mut zeros = Array2::from_elem((m, 1), G::zero());
+    // a.append(Axis(1), zeros.view()).unwrap(); // dim = (m, 2)
+    // a
+    zeros.append(Axis(1), a.view()).unwrap(); // dim = (m, 2)
+    zeros
+}
+
+#[cfg(test)]
+mod test {
+
+    use ark_bls12_381::Bls12_381 as E;
+    use ark_ec::pairing::Pairing;
+    use ark_std::{test_rng, UniformRand};
+
+    type G1 = <E as Pairing>::G1;
+    type G2 = <E as Pairing>::G2;
+    type Fr = <E as Pairing>::ScalarField;
+
+    use super::*;
+
+    #[test]
+    fn test_ayxb_proof() {
+        let rng = &mut test_rng();
+        let pp = Params::<E>::rand(rng);
+        let crs = CRS::rand(rng, &pp);
+
+        // test simple equation e(a, y) e(x, b) = t
+        let a = arr2(&[[G1::rand(rng)]]);
+        let x = arr2(&[[G1::rand(rng)]]);
+        let b = arr2(&[[G2::rand(rng)]]);
+        let y = arr2(&[[G2::rand(rng)]]);
+
+        let t =
+            dot_e::<E>(&a.clone().reversed_axes(), &y) + dot_e::<E>(&x, &b.clone().reversed_axes());
+
+        let r = Array2::from_shape_fn((1, 2), |_| Fr::rand(rng)); // dim = (m, 2) = (2, 2)
+        let s = Array2::from_shape_fn((1, 2), |_| Fr::rand(rng)); // dim = (n, 2) = (2, 2)
+        let z = Array2::from_shape_fn((2, 2), |_| Fr::rand(rng));
+
+        let c = commit_1(&crs, &r, &x);
+        let d = commit_2(&crs, &s, &y);
+        let theta = proof_1(&crs, &s, &a, &z);
+        let phi = proof_2(&crs, &r, &b, &z);
+
+        // check `verify` algorithm
+
+        // l(A) d + c l(B) = pi_t + u phi + theta v
+        let lhs = dot_e::<E>(&l(&a).reversed_axes(), &d) + dot_e(&c, &l(&b).reversed_axes());
+        let rhs = t + dot_e(&crs.u, &phi) + dot_e(&theta, &crs.v);
+        assert!(lhs == rhs);
     }
 }
