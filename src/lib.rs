@@ -6,8 +6,8 @@ pub mod encrypt;
 pub use encrypt::EncryptKey;
 pub mod key_gen;
 pub use key_gen::ken_gen;
-pub mod nizk;
 pub mod params;
+pub mod publicly_verifiable;
 pub use params::Params;
 
 #[cfg(test)]
