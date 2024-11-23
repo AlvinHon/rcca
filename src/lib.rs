@@ -55,6 +55,7 @@ mod test {
         let m = G1::rand(rng);
 
         let ciphertext = ek.encrypt(rng, &pp, m);
+        assert!(ek.verify(&ciphertext));
 
         let m_prime = dk.decrypt(&ciphertext).unwrap();
 

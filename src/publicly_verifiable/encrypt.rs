@@ -93,4 +93,10 @@ impl<E: Pairing> EncryptKey<E> {
 
         Ciphertext { x, v, proof }
     }
+
+    pub fn verify(&self, c: &Ciphertext<E>) -> bool {
+        let Ciphertext { x, v, proof } = c;
+
+        nizk::verify(&self.crs, proof, v, x)
+    }
 }
