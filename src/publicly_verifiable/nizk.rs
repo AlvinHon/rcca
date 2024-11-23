@@ -57,18 +57,22 @@ pub(crate) fn init<E: Pairing, R: Rng>(rng: &mut R, pp: &Params<E>) -> Crs<E> {
 }
 
 /// Prove the equation (5) defined in Appendix B.1.
+///
+/// ```text
 /// pi_t = e([f^T D] r, [1]) + e([F^T D] r, [v]) + e([1], [g^T E] s) + e([x], [G^T E] s)
+/// ```
+///
 /// where X1 = [f^T D], X2 = [F^T D], B1 = [1], B2 = [v], Y1 = [g^T E], Y2 = [G^T E], A1 = [1], A2 = [x]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove<E: Pairing, R: Rng>(
     rng: &mut R,
     crs: &Crs<E>,
+    x: &Array2<E::G1>,          // A2
+    gt_e_s: &Array2<E::G2>,     // Y1
+    big_gt_e_s: &Array2<E::G2>, // Y2
     ft_d_r: &Array2<E::G1>,     // X1
     big_ft_d_r: &Array2<E::G1>, // X2
     v: &Array2<E::G2>,          // B2
-    gt_e_s: &Array2<E::G2>,     // Y1
-    x: &Array2<E::G1>,          // A2
-    big_gt_e_s: &Array2<E::G2>, // Y2
     pi: &Array2<PairingOutput<E>>,
 ) -> Proof<E> {
     assert!(ft_d_r.dim() == (1, 1));
@@ -77,45 +81,29 @@ pub(crate) fn prove<E: Pairing, R: Rng>(
     assert!(big_gt_e_s.dim() == x.dim());
     assert!(pi.dim() == (1, 1));
 
-    let (m, m_prime) = v.dim();
-    let (n, n_prime) = x.dim();
-    assert_eq!(m_prime, 1);
-    assert_eq!(n_prime, 1);
-
     // split equation into two parts:
     // 1. e([f^T D] r, [1]) + e([1], [g^T E] s)
     // 2. e([F^T D] r, [v]) + e([x], [G^T E] s)
 
     // Part 1.
-    let r = Array2::from_shape_fn((1, 2), |_| E::ScalarField::rand(rng));
-    let s = Array2::from_shape_fn((1, 2), |_| E::ScalarField::rand(rng));
-    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
-
-    let c1 = commit_1(crs, &r, ft_d_r);
-    let d1 = commit_2(crs, &s, gt_e_s);
     let const_a = Array2::from_shape_fn(gt_e_s.dim(), |_| crs.g1);
     let const_b = Array2::from_shape_fn(ft_d_r.dim(), |_| crs.g2);
-    let proof1_1 = proof_1(crs, &s, &const_a, &z);
-    let proof1_2 = proof_2(crs, &r, &const_b, &z);
+    let (c1, d1, proof1_1, proof1_2) = prove_ayxb(rng, crs, &const_a, gt_e_s, ft_d_r, &const_b);
 
     // Part 2.
-    let r = Array2::from_shape_fn((m, 2), |_| E::ScalarField::rand(rng));
-    let s = Array2::from_shape_fn((n, 2), |_| E::ScalarField::rand(rng));
-    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
-
-    let c2 = commit_1(crs, &r, big_ft_d_r);
-    let d2 = commit_2(crs, &s, big_gt_e_s);
-    let proof2_1 = proof_1(crs, &s, x, &z);
-    let proof2_2 = proof_2(crs, &r, v, &z);
+    let (c2, d2, proof2_1, proof2_2) = prove_ayxb(rng, crs, x, big_gt_e_s, big_ft_d_r, v);
 
     // Due to homomorphic behaviour of GS proof, combine the commitments and proofs into one
     let theta = proof1_1 + proof2_1;
     let phi = proof1_2 + proof2_2;
 
-    // commit t
+    // Commit to the proof pi
     let r_ct = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
     let ct = commit_t(crs, pi[(0, 0)], &r_ct);
-    // adapt proof phi
+    // Adapt proof phi.
+    // The calculation comes from the idea that the lhs of the verification equation will have the additional term in ct, that is r[u^T v].
+    // In verification step, we applied the updated phi' = (phi - r[v]) to rhs of the equation.
+    // so that the additional term in rhs will be -e([u], r[v]) which cancels out the additional term in ct.
     let phi = phi - dot_s2::<E>(&r_ct, &crs.v);
 
     Proof {
@@ -163,6 +151,84 @@ pub(crate) fn verify<E: Pairing>(
         + dot_e(&crs.u.clone().reversed_axes(), phi)
         + dot_e(&theta.clone().reversed_axes(), &crs.v);
     lhs == rhs
+}
+
+/// Implements the approach to randomize a proof in a ciphertext defined in Appendix B.1.
+///
+/// We can add to the commitments of `[f^T D] r` and `[F^T D] r` the values `[f^T D] r`
+/// and `[F^T D] r` (similarly for the s components).
+///
+/// the commitmemt c_t can also be updated by adding the value pi_cap_t = pi1_cap + pi2_cap
+/// where
+///
+/// ```text
+/// pi1_cap = e([f^T D] r, [1]) + e([F^T D] r, [v_cap]) + e([u], [FE] s)
+/// pi2_cap = e([1], [g^T E] s) + e([x_cap], [G^T E] s) + e([GD^T] r, [v])
+/// ```
+pub(crate) fn zkeval<E: Pairing>(
+    proof: &Proof<E>,
+    ft_d_r: &Array2<E::G1>,
+    big_ft_d_r: &Array2<E::G1>,
+    gt_e_s: &Array2<E::G2>,
+    big_gt_e_s: &Array2<E::G2>,
+    pi_cap_t: &Array2<PairingOutput<E>>,
+) -> Proof<E> {
+    assert!(pi_cap_t.dim() == (1, 1));
+
+    let Proof {
+        c1,
+        c2,
+        d1,
+        d2,
+        theta,
+        phi,
+        ct,
+    } = proof;
+
+    let c1 = c1 + l(ft_d_r);
+    let c2 = c2 + l(big_ft_d_r);
+    let d1 = d1 + l(gt_e_s);
+    let d2 = d2 + l(big_gt_e_s);
+
+    let ct = ct + l_t(&pi_cap_t[(0, 0)]);
+
+    Proof {
+        c1,
+        c2,
+        d1,
+        d2,
+        theta: theta.clone(),
+        phi: phi.clone(),
+        ct,
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn prove_ayxb<E: Pairing, R: Rng>(
+    rng: &mut R,
+    crs: &Crs<E>,
+    a: &Array2<E::G1>,
+    y: &Array2<E::G2>,
+    x: &Array2<E::G1>,
+    b: &Array2<E::G2>,
+) -> (Com<E::G1>, Com<E::G2>, Pi<E::G1>, Pi<E::G2>) {
+    assert!(a.dim() == y.dim());
+    assert!(b.dim() == x.dim());
+    let (m, m_prime) = x.dim();
+    let (n, n_prime) = y.dim();
+    assert_eq!(m_prime, 1);
+    assert_eq!(n_prime, 1);
+
+    let r = Array2::from_shape_fn((m, 2), |_| E::ScalarField::rand(rng));
+    let s = Array2::from_shape_fn((n, 2), |_| E::ScalarField::rand(rng));
+    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+
+    let c = commit_1(crs, &r, x);
+    let d = commit_2(crs, &s, y);
+    let theta = proof_1(crs, &s, a, &z);
+    let phi = proof_2(crs, &r, b, &z);
+
+    (c, d, theta, phi)
 }
 
 fn commit_1<E: Pairing>(crs: &Crs<E>, r: &Array2<E::ScalarField>, x: &Array2<E::G1>) -> Com<E::G1> {
