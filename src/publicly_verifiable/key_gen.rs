@@ -7,7 +7,7 @@ use crate::{publicly_verifiable::nizk, Params};
 
 use super::{DecryptKey, EncryptKey};
 
-pub fn key_gen<E: Pairing, R: Rng>(
+pub fn pke2<E: Pairing, R: Rng>(
     rng: &mut R,
     pp: &Params<E>,
     k: usize,

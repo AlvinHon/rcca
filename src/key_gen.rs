@@ -5,7 +5,7 @@ use std::ops::Mul;
 
 use crate::{DecryptKey, EncryptKey, Params};
 
-pub fn ken_gen<E: Pairing, R: Rng>(
+pub fn pke1<E: Pairing, R: Rng>(
     rng: &mut R,
     pp: &Params<E>,
     k: usize,

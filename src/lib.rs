@@ -5,10 +5,11 @@ pub use decrypt::DecryptKey;
 pub mod encrypt;
 pub use encrypt::EncryptKey;
 pub mod key_gen;
-pub use key_gen::ken_gen;
+pub use key_gen::pke1;
 pub mod params;
 pub mod publicly_verifiable;
 pub use params::Params;
+pub use publicly_verifiable::pke2;
 
 #[cfg(test)]
 mod test {
@@ -27,7 +28,7 @@ mod test {
         let k = 3;
 
         let pp = Params::<E>::rand(rng);
-        let (dk, ek) = ken_gen(rng, &pp, k);
+        let (dk, ek) = pke1(rng, &pp, k);
 
         let m = G1::rand(rng);
 
@@ -49,7 +50,7 @@ mod test {
         let k = 3;
 
         let pp = Params::<E>::rand(rng);
-        let (dk, ek) = publicly_verifiable::key_gen(rng, &pp, k);
+        let (dk, ek) = pke2(rng, &pp, k);
 
         let m = G1::rand(rng);
 
