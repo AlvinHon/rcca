@@ -23,7 +23,7 @@ pub struct DecryptKey<E: Pairing> {
 }
 
 impl<E: Pairing> DecryptKey<E> {
-    pub fn decrypt(&self, pp: &Params<E>, c: &Ciphertext<E>) -> Option<E::G1Affine> {
+    pub fn decrypt(&self, pp: &Params<E>, c: &Ciphertext<E>) -> Option<E::G1> {
         let k = self.a.len() - 1;
 
         // parse x, [x^T]_1 = ([u^T], p)
@@ -37,7 +37,7 @@ impl<E: Pairing> DecryptKey<E> {
 
         // m = p - [a^T u]_1
         let a_t = self.a.clone().reversed_axes();
-        let m = (p - dot_s1::<E>(&a_t, &u)[[0, 0]]).into();
+        let m = p - dot_s1::<E>(&a_t, &u)[[0, 0]];
 
         // [pi1]_T = [(f + Fv)^T u]_T
         let pi1 = {

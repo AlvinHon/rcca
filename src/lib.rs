@@ -22,7 +22,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test() {
+    fn test_pke1() {
         let rng = &mut test_rng();
         let k = 3;
 
@@ -41,5 +41,22 @@ mod test {
         let m_prime2 = dk.decrypt(&pp, &ciphertext2).unwrap();
 
         assert_eq!(m, m_prime2);
+    }
+
+    #[test]
+    fn test_pke2() {
+        let rng = &mut test_rng();
+        let k = 3;
+
+        let pp = Params::<E>::rand(rng);
+        let (dk, ek) = publicly_verifiable::key_gen(rng, &pp, k);
+
+        let m = G1::rand(rng);
+
+        let ciphertext = ek.encrypt(rng, &pp, m);
+
+        let m_prime = dk.decrypt(&ciphertext).unwrap();
+
+        assert_eq!(m, m_prime);
     }
 }

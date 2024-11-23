@@ -15,16 +15,19 @@ type Com<G> = Array2<G>; // dim = (m, 1)
 
 type Pi<G> = Array2<G>; // dim = (2, 2)
 
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Proof<E: Pairing> {
     c1: Com<E::G1>,
     d1: Com<E::G2>,
     c2: Com<E::G1>,
     d2: Com<E::G2>,
+    ct: Com<PairingOutput<E>>,
     theta: Pi<E::G1>,
     phi: Pi<E::G2>,
 }
 
-pub(crate) struct CRS<E: Pairing> {
+#[derive(Clone, Debug)]
+pub(crate) struct Crs<E: Pairing> {
     g1: E::G1,
     g2: E::G2,
     // dim = (2, 2)
@@ -33,9 +36,9 @@ pub(crate) struct CRS<E: Pairing> {
     v: Array2<E::G2>,
 }
 
-impl<E: Pairing> CRS<E> {
-    pub(crate) fn rand<R: Rng>(rng: &mut R, pp: &Params<E>) -> Self {
-        let Params { p1: g1, p2: g2 } = pp.clone();
+impl<E: Pairing> Crs<E> {
+    fn rand<R: Rng>(rng: &mut R, pp: &Params<E>) -> Self {
+        let Params { p1: g1, p2: g2 } = *pp;
 
         let a1 = E::ScalarField::rand(rng);
         let a2 = E::ScalarField::rand(rng);
@@ -49,80 +52,91 @@ impl<E: Pairing> CRS<E> {
     }
 }
 
-pub(crate) fn init<E: Pairing, R: Rng>(rng: &mut R, pp: &Params<E>) -> CRS<E> {
-    CRS::rand(rng, pp)
+pub(crate) fn init<E: Pairing, R: Rng>(rng: &mut R, pp: &Params<E>) -> Crs<E> {
+    Crs::rand(rng, pp)
 }
 
 /// Prove the equation (5) defined in Appendix B.1.
 /// pi_t = e([f^T D] r, [1]) + e([F^T D] r, [v]) + e([1], [g^T E] s) + e([x], [G^T E] s)
 /// where X1 = [f^T D], X2 = [F^T D], B1 = [1], B2 = [v], Y1 = [g^T E], Y2 = [G^T E], A1 = [1], A2 = [x]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn prove<E: Pairing, R: Rng>(
     rng: &mut R,
-    crs: &CRS<E>,
+    crs: &Crs<E>,
     ft_d_r: &Array2<E::G1>,     // X1
     big_ft_d_r: &Array2<E::G1>, // X2
     v: &Array2<E::G2>,          // B2
     gt_e_s: &Array2<E::G2>,     // Y1
     x: &Array2<E::G1>,          // A2
     big_gt_e_s: &Array2<E::G2>, // Y2
+    pi: &Array2<PairingOutput<E>>,
 ) -> Proof<E> {
-    assert!(ft_d_r.dim() == v.dim());
+    assert!(ft_d_r.dim() == (1, 1));
     assert!(big_ft_d_r.dim() == v.dim());
-    assert!(gt_e_s.dim() == x.dim());
+    assert!(gt_e_s.dim() == (1, 1));
     assert!(big_gt_e_s.dim() == x.dim());
+    assert!(pi.dim() == (1, 1));
 
-    let (m, m_prime) = x.dim();
-    let (n, n_prime) = v.dim();
+    let (m, m_prime) = v.dim();
+    let (n, n_prime) = x.dim();
     assert_eq!(m_prime, 1);
     assert_eq!(n_prime, 1);
-
-    // randomness
-    let r = Array2::from_shape_fn((m, 2), |_| E::ScalarField::rand(rng));
-    let s = Array2::from_shape_fn((n, 2), |_| E::ScalarField::rand(rng));
-    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
 
     // split equation into two parts:
     // 1. e([f^T D] r, [1]) + e([1], [g^T E] s)
     // 2. e([F^T D] r, [v]) + e([x], [G^T E] s)
 
     // Part 1.
-    let c1 = commit_1(&crs, &r, ft_d_r);
-    let d1 = commit_2(&crs, &s, gt_e_s);
-    let const_a = Array2::from_shape_fn(gt_e_s.dim(), |_| crs.g1.clone());
-    let const_b = Array2::from_shape_fn(ft_d_r.dim(), |_| crs.g2.clone());
-    let proof1_1 = proof_1(&crs, &s, &const_a, &z);
-    let proof1_2 = proof_2(&crs, &r, &const_b, &z);
+    let r = Array2::from_shape_fn((1, 2), |_| E::ScalarField::rand(rng));
+    let s = Array2::from_shape_fn((1, 2), |_| E::ScalarField::rand(rng));
+    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+
+    let c1 = commit_1(crs, &r, ft_d_r);
+    let d1 = commit_2(crs, &s, gt_e_s);
+    let const_a = Array2::from_shape_fn(gt_e_s.dim(), |_| crs.g1);
+    let const_b = Array2::from_shape_fn(ft_d_r.dim(), |_| crs.g2);
+    let proof1_1 = proof_1(crs, &s, &const_a, &z);
+    let proof1_2 = proof_2(crs, &r, &const_b, &z);
 
     // Part 2.
-    let c2 = commit_1(&crs, &r, big_ft_d_r);
-    let d2 = commit_2(&crs, &s, big_gt_e_s);
-    let proof2_1 = proof_1(&crs, &s, &x, &z);
-    let proof2_2 = proof_2(&crs, &r, &v, &z);
+    let r = Array2::from_shape_fn((m, 2), |_| E::ScalarField::rand(rng));
+    let s = Array2::from_shape_fn((n, 2), |_| E::ScalarField::rand(rng));
+    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+
+    let c2 = commit_1(crs, &r, big_ft_d_r);
+    let d2 = commit_2(crs, &s, big_gt_e_s);
+    let proof2_1 = proof_1(crs, &s, x, &z);
+    let proof2_2 = proof_2(crs, &r, v, &z);
 
     // Due to homomorphic behaviour of GS proof, combine the commitments and proofs into one
     let theta = proof1_1 + proof2_1;
     let phi = proof1_2 + proof2_2;
+
+    // commit t
+    let r_ct = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+    let ct = commit_t(crs, pi[(0, 0)], &r_ct);
+    // adapt proof phi
+    let phi = phi - dot_s2::<E>(&r_ct, &crs.v);
 
     Proof {
         c1,
         c2,
         d1,
         d2,
+        ct,
         theta,
         phi,
     }
 }
 
 pub(crate) fn verify<E: Pairing>(
-    crs: &CRS<E>,
+    crs: &Crs<E>,
     proof: &Proof<E>,
     v: &Array2<E::G2>,
     x: &Array2<E::G1>,
-    pi_t: &Array2<PairingOutput<E>>,
 ) -> bool {
     assert!(v.dim().1 == 1);
     assert!(x.dim().1 == 1);
-    assert!(pi_t.dim() == (1, 1));
 
     let Proof {
         c1,
@@ -131,41 +145,52 @@ pub(crate) fn verify<E: Pairing>(
         d2,
         theta,
         phi,
+        ct,
     } = proof;
 
     let m = c1.dim().0;
     let n = d1.dim().0;
 
-    let a1 = Array2::from_shape_fn((m, 1), |_| crs.g1.clone());
-    let b1 = Array2::from_shape_fn((n, 1), |_| crs.g2.clone());
+    let a1 = Array2::from_shape_fn((m, 1), |_| crs.g1);
+    let b1 = Array2::from_shape_fn((n, 1), |_| crs.g2);
 
     // l(A1) d1 + l(A2) d2 + c1 l(B1) + c2 l(B2) = pi_t + u phi + theta v
     let lhs = dot_e::<E>(&l(&a1).reversed_axes(), d1)
-        + dot_e(&x.clone().reversed_axes(), d2)
+        + dot_e(&l(x).reversed_axes(), d2)
         + dot_e(&c1.clone().reversed_axes(), &l(&b1))
-        + dot_e(&c2.clone().reversed_axes(), &v);
-    let rhs = l_t(&pi_t[(0, 0)])
+        + dot_e(&c2.clone().reversed_axes(), &l(v));
+    let rhs = ct
         + dot_e(&crs.u.clone().reversed_axes(), phi)
         + dot_e(&theta.clone().reversed_axes(), &crs.v);
     lhs == rhs
 }
 
-fn commit_1<E: Pairing>(crs: &CRS<E>, r: &Array2<E::ScalarField>, x: &Array2<E::G1>) -> Com<E::G1> {
+fn commit_1<E: Pairing>(crs: &Crs<E>, r: &Array2<E::ScalarField>, x: &Array2<E::G1>) -> Com<E::G1> {
     assert_eq!(x.dim().1, 1);
 
     // c = l(x) + Ru
     l(x) + dot_s1::<E>(r, &crs.u)
 }
 
-fn commit_2<E: Pairing>(crs: &CRS<E>, s: &Array2<E::ScalarField>, y: &Array2<E::G2>) -> Com<E::G2> {
+fn commit_2<E: Pairing>(crs: &Crs<E>, s: &Array2<E::ScalarField>, y: &Array2<E::G2>) -> Com<E::G2> {
     assert_eq!(y.dim().1, 1);
 
     // d = l(y) + Sv
     l(y) + dot_s2::<E>(s, &crs.v)
 }
 
+fn commit_t<E: Pairing>(
+    crs: &Crs<E>,
+    pi: PairingOutput<E>,
+    rij: &Array2<E::ScalarField>,
+) -> Com<PairingOutput<E>> {
+    let r_v = dot_s2::<E>(rij, &crs.v);
+    let u_rv = dot_e::<E>(&crs.u.clone().reversed_axes(), &r_v);
+    l_t(&pi) + u_rv
+}
+
 fn proof_1<E: Pairing>(
-    crs: &CRS<E>,
+    crs: &Crs<E>,
     s: &Array2<E::ScalarField>,
     a: &Array2<E::G1>,
     z: &Array2<E::ScalarField>,
@@ -174,11 +199,11 @@ fn proof_1<E: Pairing>(
 
     // assume gamma does not exist (i.e. all zeros) in the equation, we have:
     // theta = S^T l(a) + Zu
-    dot_s1::<E>(&s.clone().reversed_axes(), &l(a)) + dot_s1::<E>(&z, &crs.u)
+    dot_s1::<E>(&s.clone().reversed_axes(), &l(a)) + dot_s1::<E>(z, &crs.u)
 }
 
 fn proof_2<E: Pairing>(
-    crs: &CRS<E>,
+    crs: &Crs<E>,
     r: &Array2<E::ScalarField>,
     b: &Array2<E::G2>,
     z: &Array2<E::ScalarField>,
@@ -202,7 +227,7 @@ fn l<G: PrimeGroup>(a: &Array2<G>) -> Array2<G> {
 /// l(t) = [[t, 0], [0, 0]]
 fn l_t<E: Pairing>(t: &PairingOutput<E>) -> Array2<PairingOutput<E>> {
     arr2(&[
-        [t.clone(), PairingOutput::zero()],
+        [*t, PairingOutput::zero()],
         [PairingOutput::zero(), PairingOutput::zero()],
     ])
 }
@@ -224,20 +249,20 @@ mod test {
     fn test_ayxb_proof() {
         let rng = &mut test_rng();
         let pp = Params::<E>::rand(rng);
-        let crs = CRS::rand(rng, &pp);
+        let crs = Crs::rand(rng, &pp);
 
         // test simple equation e(a, y) e(x, b) = t
-        let a = arr2(&[[G1::rand(rng)], [G1::rand(rng)]]);
-        let x = arr2(&[[G1::rand(rng)], [G1::rand(rng)]]);
-        let b = arr2(&[[G2::rand(rng)], [G2::rand(rng)]]);
-        let y = arr2(&[[G2::rand(rng)], [G2::rand(rng)]]);
+        let a = arr2(&[[G1::rand(rng)], [G1::rand(rng)], [G1::rand(rng)]]);
+        let x = arr2(&[[G1::rand(rng)], [G1::rand(rng)], [G1::rand(rng)]]);
+        let b = arr2(&[[G2::rand(rng)], [G2::rand(rng)], [G2::rand(rng)]]);
+        let y = arr2(&[[G2::rand(rng)], [G2::rand(rng)], [G2::rand(rng)]]);
 
         let t =
             dot_e::<E>(&a.clone().reversed_axes(), &y) + dot_e::<E>(&x.clone().reversed_axes(), &b);
         let t = l_t(&t[(0, 0)]);
 
-        let r = Array2::from_shape_fn((2, 2), |_| Fr::rand(rng)); // dim = (m, 2) = (2, 2)
-        let s = Array2::from_shape_fn((2, 2), |_| Fr::rand(rng)); // dim = (n, 2) = (2, 2)
+        let r = Array2::from_shape_fn((3, 2), |_| Fr::rand(rng)); // dim = (m, 2) = (3, 2)
+        let s = Array2::from_shape_fn((3, 2), |_| Fr::rand(rng)); // dim = (n, 2) = (3, 2)
         let z = Array2::from_shape_fn((2, 2), |_| Fr::rand(rng));
 
         let c = commit_1(&crs, &r, &x);
@@ -247,6 +272,45 @@ mod test {
 
         // check `verify` algorithm:
         // l(A) d + c l(B) = pi_t + u phi + theta v
+        let lhs = dot_e(&l(&a).reversed_axes(), &d) + dot_e(&c.reversed_axes(), &l(&b));
+        let rhs = t + dot_e(&crs.u.reversed_axes(), &phi) + dot_e(&theta.reversed_axes(), &crs.v);
+        assert!(lhs == rhs);
+    }
+
+    #[test]
+    fn test_ayxb_proof_and_commit_t() {
+        let rng = &mut test_rng();
+        let pp = Params::<E>::rand(rng);
+        let crs = Crs::rand(rng, &pp);
+
+        // test simple equation e(a, y) e(x, b) = t
+        let a = arr2(&[[G1::rand(rng)], [G1::rand(rng)], [G1::rand(rng)]]);
+        let x = arr2(&[[G1::rand(rng)], [G1::rand(rng)], [G1::rand(rng)]]);
+        let b = arr2(&[[G2::rand(rng)], [G2::rand(rng)], [G2::rand(rng)]]);
+        let y = arr2(&[[G2::rand(rng)], [G2::rand(rng)], [G2::rand(rng)]]);
+
+        let t =
+            dot_e::<E>(&a.clone().reversed_axes(), &y) + dot_e::<E>(&x.clone().reversed_axes(), &b);
+
+        let r = Array2::from_shape_fn((3, 2), |_| Fr::rand(rng)); // dim = (m, 2) = (3, 2)
+        let s = Array2::from_shape_fn((3, 2), |_| Fr::rand(rng)); // dim = (n, 2) = (3, 2)
+        let z = Array2::from_shape_fn((2, 2), |_| Fr::rand(rng));
+
+        let c = commit_1(&crs, &r, &x);
+        let d = commit_2(&crs, &s, &y);
+        let theta = proof_1(&crs, &s, &a, &z);
+        let phi = proof_2(&crs, &r, &b, &z);
+
+        // commit t
+        let r = Array2::from_shape_fn((2, 2), |_| Fr::rand(rng));
+        let t = commit_t(&crs, t[(0, 0)], &r);
+
+        // adapt proof phi
+        let rv = dot_s2::<E>(&r, &crs.v);
+        let phi = phi - rv;
+
+        // check `verify` algorithm:
+        // l(A) d + c l(B) = pi_t' + u phi' + theta v
         let lhs = dot_e(&l(&a).reversed_axes(), &d) + dot_e(&c.reversed_axes(), &l(&b));
         let rhs = t + dot_e(&crs.u.reversed_axes(), &phi) + dot_e(&theta.reversed_axes(), &crs.v);
         assert!(lhs == rhs);
