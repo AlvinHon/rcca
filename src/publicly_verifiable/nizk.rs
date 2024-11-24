@@ -153,6 +153,62 @@ pub(crate) fn verify<E: Pairing>(
     lhs == rhs
 }
 
+/// Implements the approach to randomize a proof in a ciphertext.
+///
+/// ## Note
+/// This is different from the original approach in the paper, but serving the same purpose,
+/// that is to "randomize" the `v` and `x` in the ciphertext while keeping the verification equation holds.
+///
+/// ## Calculation applied
+///
+/// In GS proof, we have to check the equation (simplified version)
+///
+/// ```text
+/// l(A) * d + c * l(B) = pi_t + u * phi + theta * v
+/// ```
+///
+/// Note that A and B are constants w.r.t. the terms 'x' and 'v' in the equation.
+/// The algorithm defined in encryption in the paper requires adding additional terms to `x` and `v` in the ciphertext.
+/// Hence, we have the additional term in lhs, that is,
+///
+/// ```text
+/// c * l(B') = c * l(B) + c * l(B_delta)
+/// l(A') * d = l(A) * d + l(A_delta) * d
+/// ```
+///
+/// To cancel out the additional term in lhs, we need to add the term to the rhs of the equation.
+/// Thus, the term `c_t` will be updated accordingly.
+pub(crate) fn zkeval<E: Pairing>(
+    proof: &Proof<E>,
+    v_delta: &Array2<E::G2>,
+    x_delta: &Array2<E::G1>,
+) -> Proof<E> {
+    let Proof {
+        c1,
+        c2,
+        d1,
+        d2,
+        theta,
+        phi,
+        ct,
+    } = proof.clone();
+
+    let c_delta_term = dot_e::<E>(&c2.clone().reversed_axes(), &l(v_delta));
+    let d_delta_term = dot_e::<E>(&l(x_delta).reversed_axes(), &d2);
+
+    // and
+
+    Proof {
+        c1,
+        c2,
+        d1,
+        d2,
+        theta,
+        phi,
+        ct: ct + c_delta_term + d_delta_term,
+    }
+}
+
 /// Implements the approach to randomize a proof in a ciphertext defined in Appendix B.1.
 ///
 /// We can add to the commitments of `[f^T D] r` and `[F^T D] r` the values `[f^T D] r`
@@ -165,7 +221,11 @@ pub(crate) fn verify<E: Pairing>(
 /// pi1_cap = e([f^T D] r, [1]) + e([F^T D] r, [v_cap]) + e([u], [FE] s)
 /// pi2_cap = e([1], [g^T E] s) + e([x_cap], [G^T E] s) + e([GD^T] r, [v])
 /// ```
-pub(crate) fn zkeval<E: Pairing>(
+///
+/// ## Note
+/// This function may be implemented incorrectly, or there are some mistakes in the paper.
+/// This function exists for debugging and studying purposes.
+pub(crate) fn zkeval_original<E: Pairing>(
     proof: &Proof<E>,
     ft_d_r: &Array2<E::G1>,
     big_ft_d_r: &Array2<E::G1>,
@@ -191,6 +251,8 @@ pub(crate) fn zkeval<E: Pairing>(
     let d2 = d2 + l(big_gt_e_s);
 
     let ct = ct + l_t(&pi_cap_t[(0, 0)]);
+
+    // TODO and then randomize the original GS proof system, i.e. the commitments and proofs.
 
     Proof {
         c1,
@@ -277,7 +339,7 @@ fn proof_2<E: Pairing>(
     assert_eq!(b.dim().1, 1);
 
     // assume gamma does not exist (i.e. all zeros) in the equation, we have:
-    // theta = R^T l(b) - Z^T v
+    // phi = R^T l(b) - Z^T v
     dot_s2::<E>(&r.clone().reversed_axes(), &l(b)) - dot_s2::<E>(&z.clone().reversed_axes(), &crs.v)
 }
 
@@ -380,5 +442,21 @@ mod test {
         let lhs = dot_e(&l(&a).reversed_axes(), &d) + dot_e(&c.reversed_axes(), &l(&b));
         let rhs = t + dot_e(&crs.u.reversed_axes(), &phi) + dot_e(&theta.reversed_axes(), &crs.v);
         assert!(lhs == rhs);
+    }
+
+    #[test]
+    fn test_l() {
+        let rng = &mut test_rng();
+        let a1 = arr2(&[[G1::rand(rng)], [G1::rand(rng)]]);
+        let a2 = arr2(&[[G1::rand(rng)], [G1::rand(rng)]]);
+        let a = &a1 + &a2;
+        assert!(l(&a1) + l(&a2) == l(&a));
+
+        let b = arr2(&[[G2::rand(rng)], [G2::rand(rng)]]);
+
+        let e_a1b = dot_e::<E>(&l(&a1).reversed_axes(), &b);
+        let e_a2b = dot_e::<E>(&l(&a2).reversed_axes(), &b);
+        let e_ab = dot_e::<E>(&l(&a).reversed_axes(), &b);
+        assert!(e_a1b + e_a2b == e_ab);
     }
 }

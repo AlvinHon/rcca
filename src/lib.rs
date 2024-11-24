@@ -61,7 +61,7 @@ mod test {
 
         assert_eq!(m, m_prime);
 
-        let ciphertext2 = ek.randomize(rng, &pp, &ciphertext);
+        let ciphertext2 = ek.randomize(rng, &ciphertext);
         assert!(ciphertext != ciphertext2);
         assert!(ek.verify(&ciphertext2));
 

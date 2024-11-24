@@ -100,7 +100,46 @@ impl<E: Pairing> EncryptKey<E> {
         nizk::verify(&self.crs, proof, v, x)
     }
 
-    pub fn randomize<R: Rng>(
+    /// Randomize the ciphertext `c` with a new randomness.
+    ///
+    /// ## Note
+    /// This is different from the original approach in the paper, but serving the same purpose,
+    /// that is to "randomize" the `v` and `x` in the ciphertext while keeping the verification equation holds.
+    pub fn randomize<R: Rng>(&self, rng: &mut R, c: &Ciphertext<E>) -> Ciphertext<E> {
+        let k = self.big_d.dim().1;
+
+        let r = Array2::from_shape_fn((k, 1), |_| E::ScalarField::rand(rng));
+        let s = Array2::from_shape_fn((k, 1), |_| E::ScalarField::rand(rng));
+
+        // D* = (D^T, (a^T D)^T)^T
+        let big_d_star = {
+            let mut res = self.big_d.clone().reversed_axes(); // (k, k+1)
+            let at_d_t = self.at_d.clone().reversed_axes(); // (k, 1)
+            res.append(Axis(1), at_d_t.view()).unwrap(); // (k, k+2)
+            res.reversed_axes() // (k+2, k)
+        };
+
+        // [x_cap]_1 = [x]_1 + [D*]_1 * r
+        let x_delta = dot_1s::<E>(&big_d_star, &r);
+        let x_cap = &c.x + &x_delta; // (k+2, 1)
+
+        // [v_cap]_2 = [v]_2 + [E]_2 * s
+        let v_delta = dot_2s::<E>(&self.big_e, &s);
+        let v_cap = &c.v + &v_delta; // (k+1, 1)
+
+        let proof = nizk::zkeval(&c.proof, &v_delta, &x_delta);
+
+        Ciphertext {
+            x: x_cap,
+            v: v_cap,
+            proof,
+        }
+    }
+
+    /// This function may be implemented incorrectly, or there are some mistakes in the paper.
+    /// This function exists for debugging and studying purposes.
+    #[allow(dead_code)]
+    fn randomize_original<R: Rng>(
         &self,
         rng: &mut R,
         pp: &Params<E>,
@@ -160,7 +199,7 @@ impl<E: Pairing> EncryptKey<E> {
 
         let pi_cap_t = pi1_cap + pi2_cap;
 
-        let proof = nizk::zkeval(
+        let proof = nizk::zkeval_original(
             &c.proof,
             &ft_d_r,
             &big_ft_d_r,

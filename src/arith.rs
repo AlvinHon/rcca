@@ -256,4 +256,17 @@ mod test {
         // e([a], [b]) s = [a^T b]_T s
         assert_eq!(ab_s_gt_1, ab_s_gt_2);
     }
+
+    #[test]
+    fn test_bilinear_group_property() {
+        let rng = &mut test_rng();
+        let a = Array2::from_shape_fn((2, 3), |_| G1::rand(rng));
+        let b = Array2::from_shape_fn((3, 2), |_| G2::rand(rng));
+        let e_ab = dot_e::<E>(&a, &b);
+
+        let a_prime = Array2::from_shape_fn((2, 3), |_| G1::rand(rng));
+        let e_ap_b = dot_e::<E>(&a_prime, &b);
+
+        assert!(e_ab + e_ap_b == dot_e::<E>(&(a + a_prime), &b));
+    }
 }
