@@ -196,7 +196,7 @@ pub(crate) fn zkeval<E: Pairing>(
     let c_delta_term = dot_e::<E>(&c2.clone().reversed_axes(), &l(v_delta));
     let d_delta_term = dot_e::<E>(&l(x_delta).reversed_axes(), &d2);
 
-    // and
+    // TODO and then randomize the original GS proof system, i.e. the commitments and proofs.
 
     Proof {
         c1,
