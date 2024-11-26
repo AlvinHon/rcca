@@ -1,6 +1,9 @@
+//! Define the ciphertext struct.
+
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ndarray::Array2;
 
+/// Ciphertext that created by the encryption algorithm in PKE1 scheme.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Ciphertext<E: Pairing> {
     // dim = (k+2, 1)

@@ -1,8 +1,14 @@
+//! Arithmetic operations on matrices and vectors of group elements and scalars.
+
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_std::Zero;
 use ndarray::Array2;
 use std::ops::Mul;
 
+/// Compute the dot product of two matrices of group elements, where the group operation is the
+/// pairing product.
+///
+/// Notated as `e([a], [b])`.
 pub(crate) fn dot_e<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::G2>) -> Array2<PairingOutput<E>> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
@@ -22,6 +28,10 @@ pub(crate) fn dot_e<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::G2>) -> Array2<
     res
 }
 
+/// Compute the dot product of two matrices of group elements, where the group operation is the
+/// pairing product, but the matrices `b` is the left matrix.
+///
+/// i.e. e([b], [a]). It is used in computing the expression `[(f + Fv)^T u]_T` the decryption algorithm.
 pub(crate) fn dot_e_rev<E: Pairing>(
     a: &Array2<E::G2>,
     b: &Array2<E::G1>,
@@ -44,6 +54,8 @@ pub(crate) fn dot_e_rev<E: Pairing>(
     res
 }
 
+/// Compute the dot product of a (left) matrix of group elements (PairingOutput) and a (right) matrix of scalars, where the operation is
+/// scalar multiplication of the group element.
 pub(crate) fn dot_es<E: Pairing>(
     a: &Array2<PairingOutput<E>>,
     b: &Array2<E::ScalarField>,
@@ -66,6 +78,8 @@ pub(crate) fn dot_es<E: Pairing>(
     res
 }
 
+/// Compute the dot product of a (left) matrix of scalars and a (right) matrix of group elements (G1), where the operation is
+/// scalar multiplication of the group element.
 pub(crate) fn dot_1s<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::ScalarField>) -> Array2<E::G1> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
@@ -85,6 +99,8 @@ pub(crate) fn dot_1s<E: Pairing>(a: &Array2<E::G1>, b: &Array2<E::ScalarField>) 
     res
 }
 
+/// Compute the dot product of a (left) matrix of scalars and a (right) matrix of group elements (G1), where the operation is
+/// scalar multiplication of the group element.
 pub(crate) fn dot_s1<E: Pairing>(a: &Array2<E::ScalarField>, b: &Array2<E::G1>) -> Array2<E::G1> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
@@ -104,6 +120,8 @@ pub(crate) fn dot_s1<E: Pairing>(a: &Array2<E::ScalarField>, b: &Array2<E::G1>) 
     res
 }
 
+/// Compute the dot product of a (left) matrix of group elements (G2) and a (right) matrix of scalars, where the operation is
+/// scalar multiplication of the group element.
 pub(crate) fn dot_2s<E: Pairing>(a: &Array2<E::G2>, b: &Array2<E::ScalarField>) -> Array2<E::G2> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();
@@ -123,6 +141,8 @@ pub(crate) fn dot_2s<E: Pairing>(a: &Array2<E::G2>, b: &Array2<E::ScalarField>) 
     res
 }
 
+/// Compute the dot product of a (left) matrix of scalars and a (right) matrix of group elements (G2), where the operation is
+/// scalar multiplication of the group element.
 pub(crate) fn dot_s2<E: Pairing>(a: &Array2<E::ScalarField>, b: &Array2<E::G2>) -> Array2<E::G2> {
     let (m, n_prime) = a.dim();
     let (m_prime, n) = b.dim();

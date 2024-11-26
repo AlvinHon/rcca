@@ -1,3 +1,4 @@
+/// Implementation of the key generation algorithm for the PKE1 scheme.
 use ark_ec::pairing::Pairing;
 use ark_std::{rand::Rng, UniformRand};
 use ndarray::{Array2, Axis};
@@ -5,11 +6,46 @@ use std::ops::Mul;
 
 use crate::{DecryptKey, EncryptKey, Params};
 
+/// Key generation algorithm for the PKE1 scheme.
+///
+/// # Example
+///
+/// ```rust
+/// use ark_bls12_381::Bls12_381 as E;
+/// use ark_ec::pairing::Pairing;
+/// use ark_std::UniformRand;
+/// use rand::thread_rng;
+///
+/// use rcca::{Params, pke1};
+///
+/// type G1 = <E as Pairing>::G1Affine;
+///
+/// let rng = &mut thread_rng();
+/// let k = 3;
+///
+/// let pp = Params::<E>::rand(rng);
+/// let (dk, ek) = rcca::pke1(rng, &pp, k);
+///
+/// let m = G1::rand(rng);
+///
+/// let ciphertext = ek.encrypt(rng, m);
+/// let m_prime = dk.decrypt(&pp, &ciphertext).unwrap();
+/// assert_eq!(m, m_prime);
+///
+/// let ciphertext2 = ek.randomize(rng, &ciphertext);
+/// assert!(ciphertext != ciphertext2);
+/// let m_prime2 = dk.decrypt(&pp, &ciphertext2).unwrap();
+///
+/// assert_eq!(m, m_prime2);
+/// ```
 pub fn pke1<E: Pairing, R: Rng>(
     rng: &mut R,
     pp: &Params<E>,
     k: usize,
 ) -> (DecryptKey<E>, EncryptKey<E>) {
+    // Implements the key generation algorithm in the PKE1 scheme in the section 3, aka.
+    // the algorithm `KGen` in the figure 3 of the paper.
+
     let Params { p1, p2 } = pp;
     let pt = E::pairing(p1, p2);
 

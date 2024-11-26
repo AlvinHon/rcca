@@ -1,3 +1,5 @@
+//! Defines the `DecryptKey` struct and its methods, for the PKE1 scheme.
+
 use ark_ec::pairing::Pairing;
 use ndarray::{Array2, Axis};
 use std::ops::Mul;
@@ -8,6 +10,7 @@ use crate::{
     Params,
 };
 
+/// The decryption key in the PKE1 scheme.
 #[derive(Clone, Debug)]
 pub struct DecryptKey<E: Pairing> {
     // dim = (k+1, 1)
@@ -23,7 +26,11 @@ pub struct DecryptKey<E: Pairing> {
 }
 
 impl<E: Pairing> DecryptKey<E> {
+    /// Decrypt the ciphertext. Return the plaintext if the verification is successful.
     pub fn decrypt(&self, pp: &Params<E>, c: &Ciphertext<E>) -> Option<E::G1> {
+        // Implements the decryption algorithm in the PKE1 scheme in the section 3, aka.
+        // the algorithm `Dec` in the figure 3 of the paper.
+
         let k = self.a.len() - 1;
 
         // parse x, [x^T]_1 = ([u^T], p)

@@ -1,3 +1,5 @@
+//! Defines the `EncryptKey` struct and its methods, for the publicly verifiable PKE scheme, PKE2.
+
 use ark_ec::{pairing::Pairing, AffineRepr};
 use ark_std::{rand::Rng, UniformRand};
 use ndarray::{Array, Array2, Axis};
@@ -10,6 +12,7 @@ use crate::{
 
 use super::{Ciphertext, Crs};
 
+/// The encryption key used in the PKE2 scheme.
 #[derive(Clone, Debug)]
 pub struct EncryptKey<E: Pairing> {
     // ... same as pk in PKE1, except for ft_d and gt_e should be changed to G1 and G2 (see Appendix B.1) ...
@@ -37,7 +40,11 @@ pub struct EncryptKey<E: Pairing> {
 }
 
 impl<E: Pairing> EncryptKey<E> {
+    /// Encrypt the message `m` using the public key.
     pub fn encrypt<R: Rng>(&self, rng: &mut R, pp: &Params<E>, m: E::G1Affine) -> Ciphertext<E> {
+        // Implements the encryption algorithm in the PKE2 scheme in the section 4, aka.
+        // the algorithm `Enc` in the figure 5 of the paper.
+
         let k = self.big_d.dim().1;
 
         let r = Array2::from_shape_fn((k, 1), |_| E::ScalarField::rand(rng));
@@ -94,7 +101,11 @@ impl<E: Pairing> EncryptKey<E> {
         Ciphertext { x, v, proof }
     }
 
+    /// Verify the ciphertext `c`.
     pub fn verify(&self, c: &Ciphertext<E>) -> bool {
+        // Implements the verification algorithm in the PKE2 scheme in the section 4, aka.
+        // the algorithm `Ver` in the figure 5 of the paper.
+
         let Ciphertext { x, v, proof } = c;
 
         nizk::verify(&self.crs, proof, v, x)
@@ -136,6 +147,9 @@ impl<E: Pairing> EncryptKey<E> {
         }
     }
 
+    /// Implements the randomization algorithm in the PKE2 scheme in the section 4, aka.
+    /// the algorithm `Rand` in the figure 5 of the paper.
+    ///
     /// This function may be implemented incorrectly, or there are some mistakes in the paper.
     /// This function exists for debugging and studying purposes.
     #[allow(dead_code)]

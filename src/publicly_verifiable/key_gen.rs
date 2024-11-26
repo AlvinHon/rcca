@@ -1,3 +1,5 @@
+//! Defines Key generation for the publicly verifiable PKE scheme, PKE2.
+
 use ark_ec::pairing::Pairing;
 use ark_std::{rand::Rng, UniformRand};
 use ndarray::{Array2, Axis};
@@ -7,6 +9,41 @@ use crate::{publicly_verifiable::nizk, Params};
 
 use super::{DecryptKey, EncryptKey};
 
+/// Key generation algorithm for the PKE2 scheme.
+///
+/// # Example
+///
+/// ```rust
+/// use ark_bls12_381::Bls12_381 as E;
+/// use ark_ec::pairing::Pairing;
+/// use ark_std::UniformRand;
+/// use rand::thread_rng;
+/// use rcca::{Params, pke2};
+///
+/// type G1 = <E as Pairing>::G1Affine;
+///
+/// let rng = &mut thread_rng();
+/// let k = 3;
+///
+/// let pp = Params::<E>::rand(rng);
+/// let (dk, ek) = rcca::pke2(rng, &pp, k);
+///
+/// let m = G1::rand(rng);
+///
+/// let ciphertext = ek.encrypt(rng, &pp, m);
+/// assert!(ek.verify(&ciphertext));
+///
+/// let m_prime = dk.decrypt(&ciphertext).unwrap();
+///
+/// assert_eq!(m, m_prime);
+///
+/// let ciphertext2 = ek.randomize(rng, &ciphertext);
+/// assert!(ciphertext != ciphertext2);
+/// assert!(ek.verify(&ciphertext2));
+///
+/// let m_prime2 = dk.decrypt(&ciphertext2).unwrap();
+/// assert_eq!(m, m_prime2);
+/// ```
 pub fn pke2<E: Pairing, R: Rng>(
     rng: &mut R,
     pp: &Params<E>,

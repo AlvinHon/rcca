@@ -1,3 +1,5 @@
+//! Implementations of publicly verifiable encryption scheme, PKE2.
+
 pub(crate) mod ciphertext;
 pub use ciphertext::*;
 pub(crate) mod decrypt;

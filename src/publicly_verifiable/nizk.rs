@@ -1,3 +1,5 @@
+//! Implements Non-interactive zero-knowledge proof system defined in Appendix B.1.
+
 use ark_ec::{
     pairing::{Pairing, PairingOutput},
     PrimeGroup,
@@ -15,6 +17,7 @@ type Com<G> = Array2<G>; // dim = (m, 1)
 
 type Pi<G> = Array2<G>; // dim = (2, 2)
 
+/// A GS Proof for PKE2 scheme.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Proof<E: Pairing> {
     c1: Com<E::G1>,
@@ -26,6 +29,7 @@ pub(crate) struct Proof<E: Pairing> {
     phi: Pi<E::G2>,
 }
 
+/// Common reference string for the GS proof system.
 #[derive(Clone, Debug)]
 pub(crate) struct Crs<E: Pairing> {
     g1: E::G1,
@@ -117,6 +121,7 @@ pub(crate) fn prove<E: Pairing, R: Rng>(
     }
 }
 
+/// Verification function `Ver` in the GS proof system required in PKE2 scheme.
 pub(crate) fn verify<E: Pairing>(
     crs: &Crs<E>,
     proof: &Proof<E>,
@@ -265,6 +270,7 @@ pub(crate) fn zkeval_original<E: Pairing>(
     }
 }
 
+/// An utility function for construction gs proof of the simple equation e(a, y) e(x, b) = t.
 #[allow(clippy::type_complexity)]
 fn prove_ayxb<E: Pairing, R: Rng>(
     rng: &mut R,
@@ -293,6 +299,7 @@ fn prove_ayxb<E: Pairing, R: Rng>(
     (c, d, theta, phi)
 }
 
+/// Commitment to variable x in GS Proof. Not the "x" defined in the algorithm.
 fn commit_1<E: Pairing>(crs: &Crs<E>, r: &Array2<E::ScalarField>, x: &Array2<E::G1>) -> Com<E::G1> {
     assert_eq!(x.dim().1, 1);
 
@@ -300,6 +307,7 @@ fn commit_1<E: Pairing>(crs: &Crs<E>, r: &Array2<E::ScalarField>, x: &Array2<E::
     l(x) + dot_s1::<E>(r, &crs.u)
 }
 
+/// Commitment to variable y in GS Proof. Not the "y" defined in the algorithm.
 fn commit_2<E: Pairing>(crs: &Crs<E>, s: &Array2<E::ScalarField>, y: &Array2<E::G2>) -> Com<E::G2> {
     assert_eq!(y.dim().1, 1);
 
@@ -307,6 +315,7 @@ fn commit_2<E: Pairing>(crs: &Crs<E>, s: &Array2<E::ScalarField>, y: &Array2<E::
     l(y) + dot_s2::<E>(s, &crs.v)
 }
 
+/// Commitment to the proof pi_t, as introduced in the paper.
 fn commit_t<E: Pairing>(
     crs: &Crs<E>,
     pi: PairingOutput<E>,
@@ -317,6 +326,7 @@ fn commit_t<E: Pairing>(
     l_t(&pi) + u_rv
 }
 
+/// Compute the proof `theta` (dim = (2,2))in GS Proof.
 fn proof_1<E: Pairing>(
     crs: &Crs<E>,
     s: &Array2<E::ScalarField>,
@@ -330,6 +340,7 @@ fn proof_1<E: Pairing>(
     dot_s1::<E>(&s.clone().reversed_axes(), &l(a)) + dot_s1::<E>(z, &crs.u)
 }
 
+/// Compute the proof `phi` (dim = (2,2)) in GS Proof.
 fn proof_2<E: Pairing>(
     crs: &Crs<E>,
     r: &Array2<E::ScalarField>,
@@ -343,7 +354,7 @@ fn proof_2<E: Pairing>(
     dot_s2::<E>(&r.clone().reversed_axes(), &l(b)) - dot_s2::<E>(&z.clone().reversed_axes(), &crs.v)
 }
 
-/// l(a) = [a | 0]
+/// Mapping function of Group elements, l(a) = [a | 0], dim = (m, 2)
 fn l<G: PrimeGroup>(a: &Array2<G>) -> Array2<G> {
     let mut a = a.clone();
     let m = a.dim().0;
@@ -352,7 +363,7 @@ fn l<G: PrimeGroup>(a: &Array2<G>) -> Array2<G> {
     a
 }
 
-/// l(t) = [[t, 0], [0, 0]]
+/// Mapping function of PairingOutput, l(t) = [[t, 0], [0, 0]], dim = (2, 2)
 fn l_t<E: Pairing>(t: &PairingOutput<E>) -> Array2<PairingOutput<E>> {
     arr2(&[
         [*t, PairingOutput::zero()],
