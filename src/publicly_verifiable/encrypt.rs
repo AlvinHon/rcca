@@ -138,7 +138,7 @@ impl<E: Pairing> EncryptKey<E> {
         let v_delta = dot_2s::<E>(&self.big_e, &s);
         let v_cap = &c.v + &v_delta; // (k+1, 1)
 
-        let proof = nizk::zkeval(&c.proof, &v_delta, &x_delta);
+        let proof = nizk::zkeval(rng, &self.crs, &c.proof, &v_cap, &v_delta, &x_cap, &x_delta);
 
         Ciphertext {
             x: x_cap,

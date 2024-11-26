@@ -183,9 +183,13 @@ pub(crate) fn verify<E: Pairing>(
 ///
 /// To cancel out the additional term in lhs, we need to add the term to the rhs of the equation.
 /// Thus, the term `c_t` will be updated accordingly.
-pub(crate) fn zkeval<E: Pairing>(
+pub(crate) fn zkeval<E: Pairing, R: Rng>(
+    rng: &mut R,
+    crs: &Crs<E>,
     proof: &Proof<E>,
+    v: &Array2<E::G2>,
     v_delta: &Array2<E::G2>,
+    x: &Array2<E::G1>,
     x_delta: &Array2<E::G1>,
 ) -> Proof<E> {
     let Proof {
@@ -200,8 +204,17 @@ pub(crate) fn zkeval<E: Pairing>(
 
     let c_delta_term = dot_e::<E>(&c2.clone().reversed_axes(), &l(v_delta));
     let d_delta_term = dot_e::<E>(&l(x_delta).reversed_axes(), &d2);
+    let ct = ct + c_delta_term + d_delta_term;
 
-    // TODO and then randomize the original GS proof system, i.e. the commitments and proofs.
+    // And then randomize the original GS proof system, i.e. the commitments and proofs.
+    let m = c1.dim().0;
+    let n = d1.dim().0;
+
+    let a1 = Array2::from_shape_fn((m, 1), |_| crs.g1);
+    let b1 = Array2::from_shape_fn((n, 1), |_| crs.g2);
+    let (c1, d1, theta, phi) = rand_cd_pi(rng, crs, &a1, &b1, c1, d1, theta, phi);
+
+    let (c2, d2, theta, phi) = rand_cd_pi(rng, crs, x, v, c2, d2, theta, phi);
 
     Proof {
         c1,
@@ -210,7 +223,7 @@ pub(crate) fn zkeval<E: Pairing>(
         d2,
         theta,
         phi,
-        ct: ct + c_delta_term + d_delta_term,
+        ct,
     }
 }
 
@@ -295,6 +308,40 @@ fn prove_ayxb<E: Pairing, R: Rng>(
     let d = commit_2(crs, &s, y);
     let theta = proof_1(crs, &s, a, &z);
     let phi = proof_2(crs, &r, b, &z);
+
+    (c, d, theta, phi)
+}
+
+/// An utility function for randomize components in a gs proof system, where the equation is e(a, y) e(x, b) = t.
+///
+/// Reference: Section 6.3 in the paper https://eprint.iacr.org/2010/233.pdf.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn rand_cd_pi<E: Pairing, R: Rng>(
+    rng: &mut R,
+    crs: &Crs<E>,
+    a: &Array2<E::G1>,
+    b: &Array2<E::G2>,
+    c: Com<E::G1>,
+    d: Com<E::G2>,
+    theta: Pi<E::G1>,
+    phi: Pi<E::G2>,
+) -> (Com<E::G1>, Com<E::G2>, Pi<E::G1>, Pi<E::G2>) {
+    let m = c.dim().0;
+    let n = d.dim().0;
+
+    let r = Array2::from_shape_fn((m, 2), |_| E::ScalarField::rand(rng));
+    let s = Array2::from_shape_fn((n, 2), |_| E::ScalarField::rand(rng));
+    let z = Array2::from_shape_fn((2, 2), |_| E::ScalarField::rand(rng));
+
+    // c' = c + Ru
+    let c = c + dot_s1::<E>(&r, &crs.u);
+    // d' = d + Sv
+    let d = d + dot_s2::<E>(&s, &crs.v);
+    // theta' = theta + S^T l(A) + Z u
+    let theta = theta + dot_s1::<E>(&s.clone().reversed_axes(), &l(a)) + dot_s1::<E>(&z, &crs.u);
+    // phi' = phi + R^T l(B) - Z^T v
+    let phi = phi + dot_s2::<E>(&r.clone().reversed_axes(), &l(b))
+        - dot_s2::<E>(&z.clone().reversed_axes(), &crs.v);
 
     (c, d, theta, phi)
 }
