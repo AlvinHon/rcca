@@ -22,10 +22,10 @@ ark-std = "0.5"
 rand_core = "0.6"
 ndarray = { version = "^0.16", default-features = false }
 
-#[dev-dependencies]
-#rand = "0.8"
-#criterion = "0.5"
+[dev-dependencies]
+rand = "0.8"
+criterion = "0.5"
 
-#[[bench]]
-#name = "bench"
-#harness = false
+[[bench]]
+name = "bench"
+harness = false

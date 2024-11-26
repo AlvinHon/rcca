@@ -16,7 +16,8 @@ mod test {
 
     use ark_bls12_381::Bls12_381 as E;
     use ark_ec::pairing::Pairing;
-    use ark_std::{test_rng, UniformRand};
+    use ark_std::UniformRand;
+    use rand::thread_rng;
 
     type G1 = <E as Pairing>::G1Affine;
 
@@ -24,7 +25,7 @@ mod test {
 
     #[test]
     fn test_pke1() {
-        let rng = &mut test_rng();
+        let rng = &mut thread_rng();
         let k = 3;
 
         let pp = Params::<E>::rand(rng);
@@ -46,7 +47,7 @@ mod test {
 
     #[test]
     fn test_pke2() {
-        let rng = &mut test_rng();
+        let rng = &mut thread_rng();
         let k = 3;
 
         let pp = Params::<E>::rand(rng);
