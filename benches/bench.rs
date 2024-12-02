@@ -19,7 +19,7 @@ criterion_group! {
 criterion_group! {
     name = pke2;
     config = Criterion::default().sample_size(10).measurement_time(Duration::from_secs(4));
-    targets = bench_pke2_encrypt, bench_pke2_decrypt
+    targets = bench_pke2_encrypt, bench_pke2_decrypt, bench_pke2_verify
 }
 
 criterion_main!(pke1, pke2);
@@ -74,4 +74,18 @@ fn bench_pke2_decrypt(c: &mut Criterion) {
     let ciphertext = ek.encrypt(rng, &pp, m);
 
     c.bench_function("pke2_decrypt", |b| b.iter(|| dk.decrypt(&ciphertext)));
+}
+
+fn bench_pke2_verify(c: &mut Criterion) {
+    let rng = &mut test_rng();
+    let k = 1;
+
+    let pp = Params::<E>::rand(rng);
+    let (_dk, ek) = rcca::pke2(rng, &pp, k);
+
+    let m = G1::rand(rng);
+
+    let ciphertext = ek.encrypt(rng, &pp, m);
+
+    c.bench_function("pke2_verify", |b| b.iter(|| ek.verify(&ciphertext)));
 }
