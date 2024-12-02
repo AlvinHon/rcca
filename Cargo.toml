@@ -8,14 +8,13 @@ readme = "README.md"
 repository = "https://github.com/AlvinHon/rcca"
 categories = ["cryptography"]
 keywords = ["cryptography"]
-description = ""
+description = "Implementation of RCCA encryption defined in 'Structure-Preserving and Re-randomizable RCCA-secure Public Key Encryption and its Applications'"
 
 [lib]
 name = "rcca"
 path = "src/lib.rs"
 
 [dependencies]
-ark-bls12-381 = "0.5"
 ark-ec = "0.5"
 ark-serialize = "0.5"
 ark-std = "0.5"
@@ -23,6 +22,7 @@ rand_core = "0.6"
 ndarray = { version = "^0.16", default-features = false }
 
 [dev-dependencies]
+ark-bls12-381 = "0.5"
 rand = "0.8"
 criterion = "0.5"
 
